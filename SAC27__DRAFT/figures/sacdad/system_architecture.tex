@@ -1,0 +1,600 @@
+% Preamble
+% \usepackage{tikz}
+% \usetikzlibrary{arrows.meta,positioning,fit,calc}
+
+% --------------------------------------------------------------------
+% Architecture
+% --------------------------------------------------------------------
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+    x=1cm,
+    y=1cm,
+    font=\sffamily\scriptsize,
+    >=Latex,
+    panel/.style={
+        draw,
+        rounded corners=2mm,
+        line width=.7pt,
+        inner sep=0pt
+    },
+    item/.style={
+        draw,
+        rounded corners=1.4mm,
+        line width=.45pt,
+        fill=white,
+        align=left,
+        inner sep=3.5pt
+    },
+    citem/.style={
+        item,
+        align=center
+    },
+    heading/.style={
+        font=\sffamily\bfseries\small,
+        align=center
+    },
+    subheading/.style={
+        font=\sffamily\bfseries\scriptsize,
+        align=center
+    },
+    label/.style={
+        font=\sffamily\tiny,
+        align=center
+    },
+    flow/.style={
+        -{Latex[length=2mm]},
+        line width=.65pt
+    },
+    feedback/.style={
+        flow,
+        dashed
+    },
+    request/.style={fill=blue!5, draw=blue!45!black},
+    coord/.style={fill=orange!5, draw=orange!55!black},
+    prep/.style={fill=orange!3, draw=orange!45!black},
+    manage/.style={fill=red!3, draw=red!35!black},
+    place/.style={fill=purple!4, draw=purple!40!black},
+    storage/.style={fill=green!4, draw=green!40!black},
+    node/.style={fill=blue!3, draw=blue!45!black},
+    supervisor/.style={fill=cyan!3, draw=cyan!40!black}
+]
+
+
+% ====================================================================
+% LEFT: REQUESTS
+% ====================================================================
+
+\node[
+    panel, request,
+    minimum width=85pt,
+    minimum height=4.25cm,
+    anchor=north west
+] (requests) at (-0.01,0) {};
+
+\node[heading, anchor=north] at ($(requests.north)+(0,-0.18)$)
+    {Inference requests};
+
+\node[
+    item,
+    
+    
+    anchor=north,
+    minimum width=69pt
+] (r1) at ($(requests.north)+(0.09,-0.91)$)
+{
+    \textbf{Request 1}\\[-1pt]
+    model + input 
+};
+
+\node[
+    item,
+    minimum width=72pt,
+    
+    anchor=north
+] (r2) at ($(r1.south)+(0,-.16)$)
+{
+    \textbf{Request 2}\\[-1pt]
+    model + input
+};
+
+\node at ($(r2.south)+(0,-.22)$) {$\vdots$};
+
+\node[
+    item,
+    minimum width=61pt,
+    
+    anchor=south
+] (rn) at ($(requests.south)+(0,0.16)$)
+{
+    \textbf{Request $N$}\\[-1pt]
+    model + input
+};
+
+% ====================================================================
+% CENTER: GLOBAL COORDINATOR
+% ====================================================================
+
+\node[
+    panel, coord,
+    minimum width=7.35cm,
+    minimum height=4.25cm,
+    anchor=north west
+] (coordinator) at (4.25,0) {};
+
+\node[heading, anchor=north]
+    at ($(coordinator.north)+(-0.04,-0.16)$)
+    {Global coordinator};
+
+% --- request preparation column
+
+\node[
+    panel, prep,
+    minimum width=2.15cm,
+    minimum height=3.25cm,
+    anchor=north west
+] (prepbox) at ($(coordinator.north west)+(0.22,-0.72)$) {};
+
+\node[subheading, anchor=north]
+    at ($(prepbox.north)+(0,-.13)$)
+    {Preparation};
+
+\node[
+    citem,
+    minimum width=1.82cm,
+    minimum height=.52cm,
+    anchor=north
+] (prepare) at ($(prepbox.north)+(0,-.55)$)
+    {Prepare model};
+
+\node[
+    citem,
+    minimum width=1.82cm,
+    minimum height=.52cm,
+    anchor=north
+] (partition) at ($(prepare.south)+(0,-.17)$)
+    {Partition graph};
+
+\node[
+    citem,
+    minimum width=1.82cm,
+    minimum height=.58cm,
+    anchor=north
+] (materialize) at ($(partition.south)+(0,-.17)$)
+    {Materialize\\partition inputs};
+
+\node[
+    citem,
+    minimum width=1.82cm,
+    minimum height=.52cm,
+    anchor=north
+] (createjobs) at ($(materialize.south)+(0,-.17)$)
+    {Create proof jobs};
+
+\draw[flow] (prepare) -- (partition);
+\draw[flow] (partition) -- (materialize);
+\draw[flow] (materialize) -- (createjobs);
+
+% --- request/job management column
+
+\node[
+    panel, manage,
+    minimum width=2.22cm,
+    minimum height=97pt,
+    anchor=north west
+] (managebox) at ($(prepbox.north east)+(.14,0)$) {};
+
+\node[subheading, anchor=north]
+    at ($(managebox.north)+(0,-.13)$)
+    { Management};
+
+\node[
+    citem,
+    minimum width=1.88cm,
+    minimum height=.62cm,
+    anchor=north
+] (active) at ($(managebox.north)+(0,-.55)$)
+    {Track active\\requests};
+
+\node[
+    citem,
+    minimum width=1.88cm,
+    minimum height=.62cm,
+    anchor=north
+] (progress) at ($(active.south)+(0,-.19)$)
+    {Track job\\progress};
+
+\node[
+    citem,
+    minimum width=1.88cm,
+    minimum height=.62cm,
+    anchor=north
+] (queue) at ($(progress.south)+(0,-.19)$)
+    {Manage  jobs\\across requests};
+
+% --- placement column
+
+\node[
+    panel, place,
+    minimum width=2.42cm,
+    minimum height=3.25cm,
+    anchor=north west
+] (placebox) at ($(managebox.north east)+(0.12,-0.02)$) {};
+
+\node[subheading, anchor=north]
+    at ($(placebox.north)+(0,-.13)$)
+    {Job placement};
+
+\node[
+    citem,
+    
+    minimum height=14pt,
+    anchor=north
+] (reqprog) at ($(placebox.north)+(0,-0.56)$)
+    {Request progress};
+\node[
+    citem,
+    
+    minimum height=14pt,
+    anchor=north
+] (reqprog2) at ($(placebox.north)+(-0.01,-1.21)$)
+    {Cache Metadata};
+\node[
+    citem,
+    
+    minimum height=14pt,
+    anchor=north
+] (reqprog3) at ($(placebox.north)+(0.05,-2.46)$)
+    {Historical Profiles};
+
+\node[
+    citem,
+    minimum width=60pt,
+    
+    anchor=north
+] (profiles) at ($(reqprog.south)+(0.02,-0.74)$)
+    {Historical profiles};
+
+
+\node[
+    citem,
+    minimum width=2.05cm,
+    minimum height=.48cm,
+    anchor=north
+] (target) at ($(locality.south)+(0,-.18)$)
+    {Select target node};
+
+% ====================================================================
+% RIGHT: SHARED STORAGE
+% ====================================================================
+
+\node[
+    panel, storage,
+    minimum width=4.0cm,
+    minimum height=4.25cm,
+    anchor=north west
+] (store) at (12.77,0) {};
+
+\node[heading, anchor=north]
+    at ($(store.north)+(0,-.18)$)
+    {Shared artifact store};
+
+\node[
+    item,
+    minimum width=3.55cm,
+    minimum height=.66cm,
+    anchor=north
+] (modelart) at ($(store.north)+(0,-.72)$)
+{
+    \textbf{Model artifacts}\\[-1pt]
+    compiled model, metadata
+};
+
+\node[
+    item,
+    minimum width=3.55cm,
+    minimum height=.66cm,
+    anchor=north
+] (partinputs) at ($(modelart.south)+(0,-.18)$)
+{
+    \textbf{Partition inputs}\\[-1pt]
+    intermediate tensors
+};
+
+\node[
+    item,
+    minimum width=3.55cm,
+    minimum height=.66cm,
+    anchor=north
+] (setupart) at ($(partinputs.south)+(0,-.18)$)
+{
+    \textbf{Reusable setup artifacts}\\[-1pt]
+    compiled circuits, proving keys
+};
+
+\node[
+    item,
+    minimum width=3.55cm,
+    minimum height=.66cm,
+    anchor=north
+] (proofs) at ($(setupart.south)+(0,-.18)$)
+{
+    \textbf{Proofs and outputs}
+};
+
+% ====================================================================
+% TOP-LEVEL FLOWS
+% ====================================================================
+
+\draw[flow]
+    (requests.east)
+    --
+    node[above,label] {submit 
+request}
+    (coordinator.west);
+
+\draw[<->, line width=.65pt]
+    (coordinator.east)
+    --
+    node[above,label] {read/write}
+    (store.west);
+
+% ====================================================================
+% BOTTOM: PROVER POOL
+% ====================================================================
+
+\node[
+    panel,
+    fill=blue!2,
+    draw=blue!25!black,
+    dashed,
+    minimum width=16.45cm,
+    minimum height=92pt,
+    anchor=north west
+] (pool) at (0.32,-4.99) {};
+
+\node[
+    font=\sffamily\bfseries\small,
+    anchor=north west
+] at ($(pool.north west)+(.18,-.14)$)
+    {Prover nodes};
+
+% helper node widths
+% --------------------------------------------------------------------
+% NODE 1
+
+\node[
+    panel, node,
+    minimum width=4.7cm,
+    minimum height=2.38cm,
+    anchor=north west
+] (node1) at ($(pool.north west)+(0.25,-0.58)$) {};
+
+\node[heading, anchor=north]
+    at ($(node1.north)+(-0.06,-0.02)$)
+    {Prover node 1};
+
+\node[
+    panel, supervisor,
+    minimum width=118pt,
+    minimum height=33pt,
+    anchor=north
+] (sup1) at ($(node1.north)+(0,-0.47)$) {};
+
+\node[subheading, anchor=north]
+    at ($(sup1.north)+(0,-0.04)$)
+    {Local supervisor};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south west
+] at ($(sup1.south west)+(0.05,0.05)$)
+    {Stage\\admission};
+
+\node[
+    citem,
+    minimum width=33pt,
+    
+    anchor=south
+] at ($(sup1.south)+(0.00,0.03)$)
+    {Stage\\profiles};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south east
+] at ($(sup1.south east)+(-0.20,0.08)$)
+    {Local \\cache};
+
+\node[
+    item,
+    minimum width=102pt,
+    
+    anchor=south
+] (workers1) at ($(node1.south)+(0.00,0.13)$)
+{
+    \centering
+    \textbf{Prover processes}
+};
+
+% --------------------------------------------------------------------
+% NODE 2
+
+\node[
+    panel, node,
+    minimum width=4.7cm,
+    minimum height=2.38cm,
+    anchor=north
+] (node2) at ($(pool.north)+(0,-.58)$) {};
+
+\node[heading, anchor=north]
+    at ($(node2.north)+(0,-0.04)$)
+    {Prover node 2};
+
+\node[
+    panel, supervisor,
+    minimum width=4.32cm,
+    minimum height=34pt,
+    anchor=north
+] (sup2) at ($(node2.north)+(0,-.47)$) {};
+
+\node[subheading, anchor=north]
+    at ($(sup2.north)+(0,-0.04)$)
+    {Local supervisor};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south west
+] at ($(sup2.south west)+(.10,.10)$)
+    {Stage\\admission};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south
+] at ($(sup2.south)+(0.05,0.07)$)
+    {Stage\\profiles};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south east
+] at ($(sup2.south east)+(-0.05,0.10)$)
+    {Local \\cache};
+
+\node[
+    item,
+    minimum width=123pt,
+    
+    anchor=south
+] (workers2) at ($(node2.south)+(0.00,0.13)$)
+{
+    \centering
+    \textbf{Prover processes} 
+};
+
+% --------------------------------------------------------------------
+% NODE M
+
+\node[
+    panel, node,
+    minimum width=4.7cm,
+    minimum height=2.38cm,
+    anchor=north east
+] (nodeM) at ($(pool.north east)+(-0.65,-0.55)$) {};
+
+\node[heading, anchor=north]
+    at ($(nodeM.north)+(0,-0.05)$)
+    {Prover node $M$};
+
+\node[
+    panel, supervisor,
+    minimum width=4.32cm,
+    minimum height=33pt,
+    anchor=north
+] (supM) at ($(nodeM.north)+(0,-.47)$) {};
+
+\node[subheading, anchor=north]
+    at ($(supM.north)+(0,-0.01)$)
+    {Local supervisor};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south west
+] at ($(supM.south west)+(0.13,0.06)$)
+    {Stage\\admission};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south
+] at ($(supM.south)+(0.03,0.05)$)
+    {Stage\\profiles};
+
+\node[
+    citem,
+    minimum width=1.22cm,
+    minimum height=.38cm,
+    anchor=south east
+] at ($(supM.south east)+(-0.10,0.11)$)
+    {Local \\cache};
+
+\node[
+    item,
+    minimum width=119pt,
+
+    anchor=south
+] (workersM) at ($(nodeM.south)+(0.03,0.13)$)
+{
+    \centering
+    \textbf{Prover processes} 
+};
+
+\node[font=\bfseries\large]
+    at ($(node2.east)!0.5!(nodeM.west)$) {$\cdots$};
+
+% ====================================================================
+% COORDINATOR <-> NODES
+% ====================================================================
+
+\coordinate (assign) at ($(coordinator.south)+(0,-.30)$);
+
+\draw[line width=.65pt]
+    (coordinator.south) -- (assign);
+
+\draw[line width=.65pt]
+    (assign) -| (node1.north);
+
+\draw[flow]
+    (assign) -- (7.91,-5.55);
+
+\draw[line width=.65pt]
+    (assign) -| (nodeM.north);
+
+\node[label, anchor=east]
+    at ($(assign)+(-0.11,-0.19)$)
+    {assign proof jobs};
+
+% node feedback
+\draw[feedback]
+    ($(node2.north)+(0.11,0.02)$)
+    --
+    ($(coordinator.south)+(0.70,0.01)$);
+
+\node[label, anchor=west]
+    at ($(node2.north)+(0.54,0.75)$)
+    {status, completion, profiles};
+
+% shared storage <-> nodes
+\draw[<->, dashed, line width=.65pt]
+    (store.south)
+    |- ($(nodeM.north)+(1.0,0.04)$);
+
+\node[label, anchor=west]
+    at ($(store.south)+(0.34,-0.55)$)
+    {read/write};
+
+\end{tikzpicture}
+
+\caption{
+Architecture of \TITLE{}. Concurrent inference requests are decomposed
+into proof jobs and managed by a global coordinator. The coordinator
+tracks request progress and places jobs across prover nodes using
+historical execution profiles and reusable setup artifacts. Each node
+performs local stage admission using current memory availability and
+stage-level resource profiles. Large request and proving artifacts are
+accessed through shared storage by reference.
+}
+\label{fig:architecture}
+\end{figure*}

@@ -1,0 +1,7 @@
+\section{Discussion}
+\label{sec:discussion}
+\TITLE{} currently uses memory as the primary admission resource because memory capacity determines whether proof stages can safely overlap on a node. CPU contention can still limit throughput at high local concurrency, and the same admission framework could be extended to incorporate CPU estimates when needed. We also treat model partitioning and runtime scheduling as separate concerns. Our experiments use fine-grained operator-level partitions by default and evaluate sensitivity to coarser groupings separately. Jointly optimizing partition selection and runtime scheduling is left to future work. Finally, the current coordinator provides request-level fairness rather than explicit priority-, deadline-, or latency-SLO-aware scheduling. Such policies could be layered on top of zkInfer's resource-aware execution mechanisms to improve tail latency under mixed online and batch workloads.
+
+
+\section{Conclusion}
+\TITLE{} treats zkML proof generation as a distributed systems problem by partitioning inference into independently executable proving jobs, reusing job-level artifacts, and scheduling work under memory constraints. Across convolutional, generative, and transformer workloads, \TITLE{} reduces end-to-end latency by up to \(69\times\) and peak per-machine memory by up to \(48\times\), while enabling a model that exhausts memory under monolithic proving. Integration with a second zkML backend further shows that these benefits do not require modifying the backend's core proving logic.

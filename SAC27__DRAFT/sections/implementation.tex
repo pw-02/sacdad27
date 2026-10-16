@@ -1,0 +1,16 @@
+
+\section{Implementation and Deployment}
+We implemented \TITLE{} in approximately 12{,}000 lines of Python. The
+prototype includes the coordinator, node supervisors, isolated prover
+subprocesses, client API, and artifact storage. EZKL~\cite{ezkl} is the
+primary proving backend, with Halo2 providing the underlying proof system.
+We additionally modified the EZKL/Halo2 integration to expose proving
+stages and record the resource measurements used by \TITLE{}'s admission
+policies and evaluation.
+
+For colocated deployments, \TITLE{} stores artifacts on the local
+filesystem. Distributed deployments use Amazon S3~\cite{aws-s3} as shared
+storage, with each prover node maintaining a bounded cache of
+reusable setup artifacts. The runtime interacts with proving backends
+through a common execution interface. Section~\ref{subsec:extendingtoothersystems}
+shows that this interface can also support zkTorch~\cite{chen2025zktorch}.

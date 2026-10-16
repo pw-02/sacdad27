@@ -1,0 +1,134 @@
+\section{Background}
+\label{sec:background}
+
+\subsection{zkML Workflow and Proving Pipeline}
+\label{sec:zkml-pipeline}
+
+We first describe the zkML workflow underlying the workloads in this
+paper. As shown in Figure~\ref{fig:zkml-workflow}, a client submits an
+input \(x\) to a model provider, which evaluates a model with parameters
+\(\theta\) to produce an output \(y=f(x,\theta)\). The provider returns
+\(y\) together with a ZK-SNARK proof \(\pi\) attesting that the specified
+model computation produced that output. Which values are public or
+private depends on the application. For example, \(y\) may be public
+while the input \(x\) and model parameters \(\theta\) remain hidden.
+
+To generate \(\pi\), the model computation is first mapped to a
+proof-compatible representation. Floating-point tensor operations are
+typically expressed using quantized integer or fixed-point
+arithmetic~\cite{boyuan2021zen,chen2024zkml}, and the resulting
+computation is compiled into an arithmetic circuit or constraint
+system~\cite{gabizon2019plonk}. Proving and verification keys are then
+generated for that circuit. These artifacts may be prepared ahead of
+time or generated on demand, and can be reused across requests that
+share the same circuit configuration.
+
+For each request, the prover constructs the values required to satisfy
+the circuit constraints, including the request input, intermediate
+activations, and other private values. These assignments form the
+\emph{witness}, which is used together with the proving key to generate
+\(\pi\). The client then verifies the proof using the verification key
+without re-executing the inference computation.
+
+
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/background/zkInfer_workflow.pdf}
+    \caption{
+    zkML inference and verification workflow. The model provider acts as the prover, returning an output $y$ and a proof $\pi$ attesting that $y$ was produced by evaluating the claimed model on input $x$.
+    }
+    \Description{
+        Diagram showing a client sending an input to a machine-learning service provider. The provider evaluates a model, generates a zero-knowledge proof of correct inference, and returns the output and proof to the client, which verifies the proof.
+    }
+    \label{fig:zkml-workflow}
+\end{figure}
+
+
+\subsection{Proof Generation as a Systems Bottleneck}
+\label{sec:proving-bottleneck}
+zkML proof generation introduces substantial overhead beyond ordinary
+model execution. Rather than evaluating only the model's tensor
+operations, the prover must demonstrate that the execution satisfies an
+arithmetic constraint system. Operations that are inexpensive during
+conventional inference can require considerably more work once
+represented as constraints. Fixed-point arithmetic, nonlinearities,
+comparisons, and range checks, for example, may introduce additional
+constraints or lookup
+arguments~\cite{chen2024zkml,kang2024scaling,liu2021zkcnn}. Proving
+cost is therefore determined not only by the model's computational
+workload, but also by the size and structure of the circuit used to
+represent it.
+
+This circuit expansion has particularly significant consequences for
+memory consumption. Halo2~\cite{halo2} evaluates circuits over a
+power-of-two domain and stores witness and circuit state in several
+columnar structures. Proof generation additionally materializes
+polynomial state for constraint evaluation, lookup and permutation
+arguments, and polynomial commitments. The prover's working set therefore
+grows with both the evaluation-domain size and the amount of circuit and
+protocol state that must remain live during execution. For the
+MobileNetV2 workload studied in this paper, \(k=26\), corresponding to
+an evaluation domain of \(2^{26}\) elements. At 32~bytes per field
+element, a single domain-sized field vector occupies approximately
+2~GiB. A complete proof requires many such vectors together with
+proving-key material and temporary buffers, causing peak memory
+consumption to substantially exceed the size of the model and its
+inference activations.
+
+These overheads translate directly into systems-level constraints. Long
+proving times increase request latency, while large working sets restrict
+both the size of proving jobs that can execute on a machine and the
+number of jobs that can run concurrently. The problem becomes more
+pronounced in a serving environment, where multiple inference requests
+compete simultaneously for finite compute and memory resources.
+
+
+
+
+\begin{figure}[t]
+\centering
+\scriptsize
+\begin{tikzpicture}[
+op/.style={draw, rounded corners, minimum width=0.85cm, minimum height=0.42cm, align=center},
+job/.style={draw, dashed, rounded corners, inner sep=4pt},
+edge/.style={-{Latex[length=1.5mm]}, thick},
+node distance=0.55cm and 0.75cm
+]
+
+\node[op] (x) {Input};
+\node[op, right=of x] (conv) {Conv};
+\node[op, right=of conv] (relu) {ReLU};
+
+\node[op, above right=0.35cm and 0.85cm of relu] (a) {Op};
+\node[op, below right=0.35cm and 0.85cm of relu] (b) {Op};
+
+\node[op, right=2.0cm of relu] (add) {Add};
+\node[op, right=of add] (y) {Output};
+
+\draw[edge] (x) -- (conv);
+\draw[edge] (conv) -- (relu);
+\draw[edge] (relu) -- node[above left] {$t_1$} (a);
+\draw[edge] (relu) -- node[below left] {$t_1$} (b);
+\draw[edge] (a) -- node[above right] {$t_2$} (add);
+\draw[edge] (b) -- node[below right] {$t_3$} (add);
+\draw[edge] (add) -- (y);
+
+\node[job, fit=(conv)(relu), label=below:{Job 1}] {};
+\node[job, fit=(a), label=above:{Job 2}] {};
+\node[job, fit=(b), label=below:{Job 3}] {};
+\node[job, fit=(add), label=below:{Job 4}] {};
+
+\end{tikzpicture}
+\caption{
+Example inference graph partitioned into four proving jobs. Operators within the same dashed region are proved together. Intermediate tensors \(t_1\), \(t_2\), and \(t_3\) cross job boundaries and define the inputs and outputs through which the corresponding proving jobs are connected.
+}
+\label{fig:prover-job-graph}
+\end{figure}
+
+
+\subsection{Model Computation as a Graph}
+\label{sec:model-graph}
+
+Before being lowered into proof constraints, many zkML pipelines represent a model as an ONNX computation graph, where nodes correspond to tensor operators such as convolutions, matrix multiplications, activations, and reshaping operations, and edges carry intermediate tensors between operators~\cite{onnx-paper}. Figure~\ref{fig:prover-job-graph} illustrates how this graph can be partitioned into proof jobs. Each job contains one or more operators and proves the corresponding portion of the model computation. When an edge crosses a partition boundary, the tensor produced by the upstream partition becomes an input to the downstream partition. Partitioning therefore determines both the computation assigned to each proof job and the intermediate tensors that define dependencies between jobs. Although lowering changes how individual operators are represented inside the proof system, it does not change these producer--consumer relationships. The model graph therefore provides a natural basis for decomposing proof generation into smaller jobs that can be scheduled separately while respecting their data dependencies.or decomposing proof generation into independently schedulable
+jobs.

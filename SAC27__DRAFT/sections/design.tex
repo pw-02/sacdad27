@@ -1,0 +1,296 @@
+% Replacement system-design section, reviewed against pw-02/zkinfer:sacdad27
+% on 2026-10-14. This is a manuscript fragment; it uses the paper's zkInfer.
+% Requires amsmath, amssymb, algorithm, and algpseudocode.
+% Use algpseudocode rather than loading the legacy algorithmic package alongside it.
+%
+% AUTHOR REVIEW NOTES -- not typeset:
+% 1. The fetched ezkl_prover.py still invokes setup_and_compute_proof() on
+%    a cold cache miss; prover_task.py surrounds that call with one
+%    FUSED_KEYGEN_PROVE reservation. Separate trace events do not make separate
+%    admission boundaries. If the deployed version differs, reconcile the
+%    source revision before claiming independently admitted cold keygen/proving.
+% 2. split_chain.py checks adjacent entries in an ordered bundle list. It does
+%    not establish general ONNX DAG boundary coverage from an explicit edge map.
+%    require_split_chain=false can accept missing chain witnesses as unchecked.
+%    Resolve coverage and require the checks before making a full-model
+%    cryptographic soundness claim. The prose below states the implemented scope.
+% 3. The scheduler compares predicted peak with reported physical total memory,
+%    not total minus the fixed reserve. Local admission enforces the usable
+%    budget and rejects an oversized estimate. Do not describe the coordinator
+%    as already enforcing the precise local budget.
+% 4. Node-local stage history is keyed by setup key and stage, not by cold/warm
+%    condition. Evaluation must supply distinct history directories/snapshots.
+%    Coordinator profiles distinguish forced-cold from reuse-enabled history;
+%    reuse-enabled history is not necessarily a pure warm-hit history.
+% 5. Setup identity hashes serialized partition bytes plus a versioned policy;
+%    it does not automatically include every installed wheel/version or all
+%    calibrated settings. Keep deployment compatibility/versioning explicit.
+% 6. Cache eviction is recency-based, not regeneration-cost-aware. Active pins
+%    can make the configured cache target temporarily unenforceable.
+% 7. Restart recovery requeues in-progress jobs immediately; it does not wait
+%    for workers to reconnect and resume their previous leases.
+% 8. Figure design: coordinator (request preparation, fair job queue, profiles)
+%    -> per-node supervisor -> concurrent prover processes sharing a local
+%    admission controller. Show setup cache separately from request storage.
+%    Label the coordinator arrow 'job lease' and local arrows 'stage admission'.
+%    Do not draw independently placed or migrated stages.
+
+\section{zkInfer Design}
+\label{sec:design}
+
+\subsection{System Overview}
+\label{sec:system-overview}
+
+Building on the observations in Section~\ref{sec:characterization}, we propose \TITLE{}, a distributed runtime for serving zkML inference proofs under concurrent requests. Each request specifies an ONNX model and inference input, which \TITLE{} transforms into a set of proving jobs according to the configured partitioning policy. Jobs from all active requests enter a shared pool of proof work and are distributed across a set of prover nodes, allowing the runtime to coordinate execution across models, inputs, and requests while preserving the semantics of the original model execution.
+
+Figure~\ref{fig:architecture} shows the architecture of \TITLE{}. The coordinator maintains the proof jobs belonging to each inference request while simultaneously scheduling jobs from other active requests, forming a shared pool of proof work across models, inputs, and requests. For repeated executions of the same model partition, \TITLE{} can reuse previously generated setup artifacts, including calibrated settings, compiled circuits, verification keys, and proving keys.
+The key design choice is to separate cluster-wide proof-job placement from node-local resource admission. The coordinator assigns whole proof jobs to nodes using request-level fairness, historical runtime and memory estimates, coarse node capacity, and setup locality. After placement, the node supervisor controls when individual proving stages may execute, using stage-level resource estimates together with current local resource availability. This keeps global scheduling at the granularity of complete proof jobs while allowing finer-grained control over resource usage within each node.
+
+% \input{figures/sacdad/system_architecture}
+
+\subsection{Partitioning and Self-Contained Proof Jobs}
+\label{sec:self-contained-proving-jobs}
+
+During request preparation, \TITLE{} partitions the model graph according
+to a system-wide partitioning policy. Unless otherwise stated, we use
+the finest-grained configuration, which forms proof jobs from individual
+graph operators. This exposes the largest number of independently
+schedulable jobs and keeps the computation assigned to each job small.
+We do not assume that this granularity is optimal for every workload.
+Section~\ref{sec:evaluation} evaluates coarser partition sizes. 
+
+Partitioning determines the computation assigned to each proof job, but
+does not provide the request-specific values needed to construct its
+witness. A job may consume tensors produced outside its partition. For
+example, if operator \(A\) produces tensor \(y\) and operator \(B\)
+consumes \(y\), placing them in different jobs means that the job
+containing \(B\) requires the request-specific value of \(y\).
+Obtaining this value from the job containing \(A\) during proof execution
+would introduce an execution dependency between the two jobs. \TITLE{} avoids this dependency by materializing partition-boundary
+tensors before distributed proving begins. For each request, the model
+is executed once to obtain the intermediate values consumed across
+partition boundaries. These values are then attached to the
+corresponding proof jobs as witness inputs, making each job
+self-contained and independently schedulable.
+
+
+This preliminary ONNX execution is used only to materialize the
+intermediate tensor values needed to construct witnesses for the
+partitioned model. Correctness does not rely on trusting these values
+directly. Each partition is proved as a separate proof instance, while
+the underlying zkML backend's existing proof-composition mechanism
+enforces consistency across partition boundaries by binding values
+produced by upstream partitions to those consumed downstream\cite{ezkl-splitting}. \TITLE{}
+reuses this mechanism unchanged.
+
+% \subsection{Self-Contained Proof Jobs}
+% \label{sec:self-contained-proving-jobs}
+
+% Partitioning determines the computation assigned to each proof job, but
+% a partition may consume tensors produced elsewhere in the model graph.
+% If these values were obtained from upstream proof jobs during execution,
+% the resulting dependencies would restrict when jobs could be scheduled.
+% \TITLE{} instead materializes partition-boundary tensors before proof
+% execution begins.
+
+% For each request, the model graph is executed once to obtain the
+% intermediate tensor values that cross partition boundaries. Because
+% extracted partitions preserve the corresponding tensor names at their
+% interfaces, these values can be associated with the proof jobs that
+% consume them. Each proof job therefore contains the request-specific
+% inputs required for witness construction and can be scheduled
+% independently of the execution order of other proof jobs.
+
+% This preliminary execution is used only to obtain witness inputs and is
+% not itself trusted as evidence of correct inference. Each partition is
+% verified by its corresponding proof, while proof composition checks that
+% values shared across partition boundaries are consistent.
+
+\subsection{Cluster-Wide Job Placement}
+\label{sec:global-placement}
+
+When multiple inference requests are active concurrently, the coordinator
+must prevent large requests from monopolizing newly available prover
+capacity while still starting expensive work early and exploiting reusable
+setup already present on a node. \TITLE{} handles these concerns
+hierarchically rather than combining them in a weighted objective. It
+first selects the next request with eligible work using request-level
+round robin, then prefers jobs whose setup is already local to the polling
+node, and finally prioritizes longer predicted jobs within the same
+locality class.
+
+\textbf{Request-level fairness.}
+The coordinator maintains active requests in arrival order. When a node
+asks for work, it selects the first request with at least one eligible
+job for that node. After assigning one job, the request moves to the back
+of the queue if work remains, while requests with no eligible job are
+skipped for that poll. This provides fairness in assignment opportunities
+without preempting running work. Because proof jobs vary substantially in
+duration and resource demand, equalizing job counts would not imply equal
+resource use, so the coordinator retains freedom to choose among jobs
+within the selected request.
+
+\textbf{Eligibility and ordering.}
+Let \(\widehat{m}^{\max}_j\) and \(\widehat{d}_j\) denote the predicted
+maximum memory demand and execution time of job \(j\). A job is
+ineligible for node \(n\) if its known peak exceeds the node's physical
+memory capacity \(M_n\). The coordinator does not require this peak to fit
+within currently available memory, since later memory-intensive stages
+may wait locally until capacity becomes available. It only avoids
+dispatching known memory-consuming work when the node reports no usable
+memory. Among eligible jobs of the selected request, \TITLE{} first prefers jobs
+whose reusable setup artifacts are already present on the polling node. Within the
+same locality class, it selects the job with the largest predicted
+duration, using submission order to break remaining ties. This avoids
+unnecessary setup restoration while reducing the risk that long jobs
+dominate the request tail.
+
+We deliberately keep stage-level packing out of the coordinator. A more
+aggressive policy could dispatch only jobs whose first stage fits
+currently available memory, but this would duplicate admission logic and
+make placement sensitive to short-lived memory conditions. \TITLE{}
+therefore leaves fine-grained memory decisions to the node-local
+supervisor, which observes local usage directly.
+
+\subsection{Node-Local Resource Admission}
+\label{sec:local-admission}
+
+
+Once a proof job is assigned to a node, \TITLE{} delegates memory
+admission to a node-local supervisor. Memory demand changes substantially
+across proving stages, and the node has the freshest view of its own
+memory usage. The supervisor therefore does not reserve a job's predicted
+peak for its entire execution. Instead, it admits each controllable stage
+according to its predicted memory demand and current local capacity.
+Section~\ref{sec:profile-accuracy} shows that these stage-level demands
+are sufficiently repeatable to support prediction from recent
+executions.
+
+\textbf{Stage-level memory estimates.}
+For each model partition under a fixed proving configuration, the supervisor records the peak memory observed during recent executions of each stage. Measurements are maintained independently for each stage, so, for example, proving observations are not combined with key-generation observations. With fewer than five observations, \TITLE{} uses the maximum observed peak to avoid underestimating demand from sparse history. Once at least five observations are available, it uses the empirical 90th percentile over the recent history, reducing the influence of isolated outliers while retaining a conservative estimate. If no stage-specific history is available, the controller falls back to the job's whole-job memory estimate. We base admission primarily on memory because exceeding memory capacity can cause proof processes to fail, while unused memory directly limits the number of proof stages that can safely overlap on a node.
+
+Admission is enforced only at backend boundaries where execution can be delayed without interrupting an operation already in progress. EZKL~\cite{ezkl}, for example, exposes major proving operations such as witness generation, setup, and proof generation as separate calls. We additionally instrument setup at finer granularity, distinguishing parameter loading, verification-key generation, and proving-key generation. These measurements allow \TITLE{} to construct stage-specifice memory profiles and identify which portions of proof execution are responsible for peak resource demand.
+
+
+\textbf{Reservation and live-memory checks.}
+Let \(T_h\) be the physical memory of node \(h\), \(R_h\) a fixed system
+reserve, and \(B_h=T_h-R_h\) the memory budget available to proving work.
+Before stage \(s\) of job \(j\) begins, the supervisor obtains a predicted
+peak memory requirement \(\widehat{m}_{j,s}\). If \(A_h\) is the set of
+currently admitted stages, the candidate is admitted only if
+
+\begin{equation}
+    \sum_{i\in A_h}\widehat{m}_i+\widehat{m}_{j,s}\leq B_h.
+    \label{eq:stage-reservation}
+\end{equation}
+
+This prevents the sum of predicted demands from exceeding the node's
+configured proving budget. Unlike whole-job reservation,
+\(\widehat{m}_{j,s}\) changes at stage boundaries, allowing low-memory
+stages from several jobs to overlap even when their eventual peaks could
+not.
+
+Reservation accounting alone is insufficient because processes may
+already hold memory and observed usage can differ from predictions.
+\TITLE{} therefore also checks live available memory. Let \(r_i\) denote
+the current resident memory of an admitted process and \(F_h\) the
+operating system's available memory after the system reserve. The
+remaining growth protected for already admitted stages is
+
+\begin{equation}
+    U_h=\sum_{i\in A_h}\max(0,\widehat{m}_i-r_i).
+    \label{eq:unconsumed-reservations}
+\end{equation}
+
+The candidate stage contributes
+\(g_{j,s}=\max(0,\widehat{m}_{j,s}-r_j)\), and admission additionally
+requires
+
+\begin{equation}
+    U_h+g_{j,s}\leq F_h.
+    \label{eq:stage-live-memory}
+\end{equation}
+
+This avoids charging memory that is already resident twice while still
+protecting headroom that admitted stages are expected to consume later.
+
+Once a stage is admitted, \TITLE{} lets it run to completion. Its reservation remains active for the duration of the stage and is released when the stage finishes. Before entering the next controlled stage, the job must obtain a new reservation based on that stage's predicted memory demand. If insufficient memory is available, the job remains on the same node and waits until the next stage can be admitted.
+There is a brief handoff period between assigning a job to a node and the prover acquiring its first stage reservation. During this startup interval, the prover process may already consume memory even though stage-level admission has not yet begun. To account for this memory, the supervisor records a temporary startup reservation when the job is leased. That reservation is released as soon as the prover enters the stage-admission protocol, which then governs the remainder of the job.
+
+\subsection{Reusable Setup Artifacts}
+\label{sec:setup-reuse}
+\TITLE{} persists reusable setup artifacts, including compiled circuits and
+proving keys, after their first generation. Each prover node maintains a
+local cache of these artifacts. When a job is assigned to a node, the runtime
+first checks whether the required setup is already available locally. A local
+cache hit avoids setup generation and restoration, allowing the job to proceed
+to request-dependent work. If the setup is not local but a reusable copy exists
+in shared storage, the node restores it into its local cache. Otherwise, the
+setup is generated locally and subsequently persisted for future requests. On a
+cold execution, \TITLE{} retains the newly generated proving key and prover
+parameters in memory across setup and proving, avoiding an unnecessary
+serialize-and-reload cycle before persisting the reusable artifacts.
+
+After selecting
+a request according to the fairness policy described in
+Section~\ref{sec:global-placement}, the  coordinator prefers eligible jobs whose setup
+artifacts are already cached on the polling node. Locality is therefore a
+secondary scheduling objective and does not override request-level fairness or
+resource feasibility.
+
+\TITLE{} allows each node to configure a maximum size for its local cache, which is important because proving keys can be large. When the cache exceeds this limit, the node evicts inactive artifacts using a recency-based policy, while artifacts used by active jobs are pinned until those jobs complete. The cache is therefore a performance optimization rather than a correctness requirement. Evicted artifacts can be restored from shared storage when available, or regenerated otherwise, without changing the proof computation.
+
+\subsection{Leases, Failures, and Recovery}
+\label{sec:fault-tolerance}
+
+Proof jobs are also the unit of recovery in \TITLE{}. When the coordinator
+assigns a job to a prover node, that execution is treated as one attempt.
+If the prover process reports a failure, or if the node stops responding,
+the coordinator marks that attempt as failed and returns the job to the
+pending queue. The same job can then be assigned again, potentially to a
+different node. Completed jobs from the same inference request are left
+unchanged, so only interrupted work is repeated.
+
+Each attempt receives a unique lease identifier. The coordinator records
+the lease currently associated with each running job, and workers include
+that identifier when reporting completion. A result is accepted only if
+its lease matches the job's current lease. This handles cases in which a
+worker is delayed rather than permanently lost. If the coordinator has
+already reassigned the job, a late result from the earlier attempt is
+ignored rather than being mistaken for the result of the new execution.
+Artifacts produced by different attempts are kept separate for the same
+reason.
+
+Failed attempts are retried up to a configured limit. Node heartbeats are
+used to detect workers that have become unavailable and to return their
+running jobs to the pending queue. \TITLE{} also supports optional
+coordinator persistence, which stores request and job progress durably
+across coordinator restarts. Completed jobs remain complete, while jobs
+that were running are returned to the pending queue and receive a new
+lease when scheduled again..
+
+
+
+% \subsection{Leases, Failures, and Recovery}
+% \label{sec:fault-tolerance}
+
+% Independent proof jobs also define the recovery unit. A failed prover need not invalidate completed proofs from other partitions of the same request. The coordinator retains completed results and retries interrupted work at job granularity. A retry begins a new execution attempt; the runtime does not checkpoint the internal state of a partially completed proving operation.
+
+% Every assignment receives a fresh lease identifier. Completion reports include the node, job, lease, and artifact manifest, allowing the coordinator to reject reports from superseded attempts. This matters when a worker is slow rather than failed: after a timeout and reassignment, the original worker may still finish. Attempt-specific artifact names distinguish its outputs, and the obsolete lease prevents those outputs from completing the newer assignment.
+
+% The supervisor reports execution failures, which are retried up to the configured retry limit. Separately, node heartbeats allow the coordinator to detect lost nodes and requeue their in-progress jobs. The node-local admission controller removes reservations left by terminated subprocesses, preventing abandoned accounting state from permanently withholding capacity. Completed jobs and reusable setup can be retained through these failures, although work from an interrupted attempt may need to be repeated.
+
+% With persistent coordinator state enabled, a restart restores active requests and their recorded job outcomes. Completed jobs remain complete; jobs recorded as in progress are returned to the pending queue with their old assignments cleared. Requests whose proofs are already available resume finalization. Recovery therefore preserves completed work while issuing new leases for work whose previous execution can no longer be relied upon.
+
+
+
+% \subsection{Proof Completion and Boundary Consistency}
+% \label{sec:proof-composition}
+
+% The runtime separates the completion of proof generation from the successful finalization of a request. A prover publishes a manifest referencing its proof and verification material, and the supervisor reports that manifest under the current job lease. The coordinator records the result and begins finalization once the request's jobs have reached terminal states. When verification is enabled, the configured proof checks must pass before the request is marked successful.
+
+% Independently valid partition proofs do not automatically certify a consistent model execution. If partition \(P_i\) produces tensor \(y_i\) and partition \(P_j\) consumes the corresponding tensor \(x_j\), the proofs must establish both computations and bind the boundary so that \(y_i=x_j\). Computing these tensors during request preparation supplies values for witness generation but does not establish this equality cryptographically.
+
+% For ordered split chains, the prototype uses EZKL's commitment-swapping verification path. It copies a downstream proof, substitutes the upstream witness commitments at the supported boundary, and verifies the modified proof using the downstream settings and verification key. The original proof is retained. This checks compatibility of the boundary commitments in addition to verifying the individual computations. The result remains a collection of job-level proofs and verification metadata; the runtime does not recursively aggregate them into a single proof.
+
+% The implemented composition path is scoped to ordered chains. Applying it to a general partition graph additionally requires an explicit correspondence between graph edges and the boundary commitments being checked. Accordingly, the verification configuration must distinguish individual-proof validity from successful boundary checking, and composed execution requires the necessary boundary material. Scheduling independence does not relax these verification obligations.

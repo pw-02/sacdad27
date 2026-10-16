@@ -1,0 +1,61 @@
+
+
+\section{Related Work}
+\label{sec:related-work}
+
+\noindent\textbf{zkML systems and prover optimization.}
+Prior zkML systems reduce proving cost through specialized
+representations, protocols, and compilation techniques.
+ZEN~\cite{boyuan2021zen} optimizes neural-network encodings,
+Mystique~\cite{weng2021mystique} provides efficient conversions
+between representations used in zero-knowledge computation,
+and zkCNN~\cite{liu2021zkcnn} specializes proof generation
+for convolutional networks. More recent systems include
+ZKML~\cite{chen2024zkml}, an optimizing compiler for ML
+inference, zkLLM~\cite{sin2024zkllm}, which targets large
+language models, and ZKPyTorch~\cite{xie2025zkpytorch},
+which integrates ML frameworks with proof-generation engines.
+\TITLE{} builds on an existing proving backend and addresses
+the execution and resource-management problems that arise
+when serving concurrent inference requests.
+
+\noindent\textbf{Partitioning and parallel proof generation.}
+DIZK~\cite{wu2018dizk} and Pianist~\cite{liu2024pianist}
+distribute proof generation across machines to scale beyond
+the resources of a single prover. Within zkML,
+ZKTorch~\cite{chen2025zktorch} compiles model computations
+into specialized basic blocks and supports parallel proof
+accumulation. DSperse~\cite{ivanov2025dsperse} slices models
+into circuit-compatible subcomputations, enabling targeted
+verification and distributed proving. These approaches
+establish mechanisms for decomposing and distributing proof
+work. \TITLE{} examines how the resulting jobs share machines
+across concurrent requests.
+
+\noindent\textbf{Distributed proof orchestration.}
+push0~\cite{ahmadvand2026push0} provides cloud-native proof
+orchestration using persistent priority queues, task recovery,
+and prover-independent dispatch. Its blockchain setting
+requires block ordering while permitting parallel work
+within a block. \TITLE{} focuses on resource allocation
+for zkML requests, each of which exposes multiple proof
+jobs. It combines request-fair placement with node-local
+memory admission and reuse of circuit-specific proving state.
+
+\noindent\textbf{ML serving systems.}
+Clipper~\cite{crankshaw2017clipper},
+Clockwork~\cite{gujarati2020serving},
+INFaaS~\cite{romero2021infaas}, and
+Ray Serve~\cite{rayserve} address shared-resource inference
+serving through mechanisms including batching, scheduling,
+model placement, and scaling. \TITLE{} applies related serving
+principles to proof generation, where requests expand into
+heterogeneous jobs with stage-varying memory requirements
+and reusable proving artifacts. Its focus is coordinating
+whole-job placement and stage-level admission while
+preserving opportunities for setup reuse. 
+
+% To our knowledge, prior distributed zkML systems primarily optimize proof
+% generation for an individual inference, while the scheduling of proof jobs
+% across concurrent inference requests has received comparatively little
+% attention.

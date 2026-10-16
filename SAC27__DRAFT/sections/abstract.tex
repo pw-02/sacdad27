@@ -1,0 +1,41 @@
+
+
+\providecommand{\zkTBC}[1]{\textbf{[TO COMPLETE: #1]}}
+\providecommand{\zkFig}[1]{%
+  \fbox{\parbox[c][1.1in][c]{0.92\linewidth}{\centering\textbf{FIGURE PLACEHOLDER}\\#1}}%
+}
+\begin{abstract}
+Zero-knowledge machine learning (zkML) allows a model provider to return
+an inference result together with a cryptographic proof of correct
+execution. Generating these proofs, however, can be orders of magnitude
+slower than ordinary inference and require substantial memory.
+Partitioning a model into independently provable components can reduce
+proving cost and per-job memory while exposing parallelism. Under
+concurrent inference requests, however, the resulting proof jobs must
+compete for finite prover resources, making resource management a
+central systems challenge.
+
+We characterize partitioned zkML execution and identify three properties
+that shape this problem. Proof jobs vary substantially in runtime and
+memory demand, their resource requirements change throughout execution,
+and repeated executions of the same circuit exhibit predictable resource
+behavior while allowing expensive setup artifacts to be reused.
+Motivated by these observations, we present \emph{zkInfer}, a distributed
+runtime for concurrent zkML proof serving. zkInfer decomposes inference
+proofs into independently executable jobs and uses a hierarchical
+execution architecture that separates cluster-wide placement from
+node-local resource admission. This allows the runtime to account for
+reusable proving state while adapting concurrency to changing resource
+demand within each prover node.
+
+We evaluate \emph{zkInfer} across convolutional, generative, and
+transformer workloads. On a single worker, partitioned execution reduces
+end-to-end proving latency by up to \(5.6\times\) relative to monolithic
+proving. Distributing the resulting proof jobs across multiple prover
+nodes further reduces latency by up to \(69\times\) and lowers peak
+per-machine memory by up to \(48\times\).
+\textbf{[Add concurrent-serving result here once finalized.]}
+These results show that scalable zkML proof serving depends not only on
+the proving backend, but also on how proof computation is organized and
+managed across shared resources.
+\end{abstract}
