@@ -56,7 +56,7 @@ Figure~\ref{fig:burst-performance} compares the three policies as concurrent dem
 
 We next isolate the effect of adding prover nodes to a single inference request. For each workload, the request and partitioning remain fixed while the prover pool grows from 1 to 10 nodes. Let \(T_p\) denote completion time with \(p\) prover nodes and define speedup as \(T_1/T_p\). Figure~\ref{fig:scale-out} reports both completion time and speedup.
 
-All three workloads benefit substantially from additional nodes. NanoGPT (4L) decreases from 1108~s to 89~s, MobileNetV2 from 9639~s to 762~s, and TinyBERT from 7900~s to 750~s, corresponding to \(12.4\times\), \(12.7\times\), and \(10.5\times\) speedups. These speedups exceed the node-count increase because the one-node distributed configuration also incurs execution and artifact-handling costs that can overlap once the job set is spread across several workers.
+All three workloads benefit substantially from additional nodes. NanoGPT (4L) decreases from 1108~s to 89~s, MobileNetV2 from 9639~s to 762~s, and TinyBERT from 7900~s to 750~s, corresponding to \(12.4\times\), \(12.7\times\), and \(10.5\times\) speedups. These values are measured relative to the one-node distributed baseline.
 
 The worker reports show that the scheduler distributes proving work evenly at larger scales. At 10 nodes, summed job runtime per worker varies by only 116.8--118.2~s for NanoGPT and 557.1--560.1~s for MobileNetV2. Aggregate proving work remains nearly unchanged as the node count grows, so the reduction in request time comes primarily from executing the existing job set in parallel rather than from doing less proving work.
 
@@ -95,7 +95,7 @@ NanoGPT (4L) & 746.3  & 7.1  & 264.0 & 20.3 \\
 \subsection{Resource Profile Accuracy}
 \label{sec:profile-accuracy}
 
-\TITLE{} estimates stage memory from recent executions of the same model partition. We therefore test whether repeated executions are stable enough for those histories to support online admission. The microbenchmark repeatedly executes representative partitions in isolation and records the peak memory of the admission-relevant execution region. Cold runs include the fused setup-and-prove path, while warm runs measure proving after matching setup artifacts are already available.
+\TITLE{} estimates stage memory from recent executions of the same model partition. We therefore test whether repeated executions are stable enough for those histories to support online admission. The repeated-run microbenchmark uses MNIST GAN, MobileNetV2, and NanoGPT (4L); the serving experiments continue to use the primary workloads in Table~\ref{tab:models}. The microbenchmark executes representative partitions in isolation and records the peak memory of the admission-relevant execution region. Cold runs include the fused setup-and-prove path, while warm runs measure proving after matching setup artifacts are already available.
 
 For each execution, the prediction is constructed using only earlier observations from the same partition and setup condition. With fewer than five prior measurements, \TITLE{} uses the largest observed peak. Once five are available, it uses the empirical 90th percentile of recent history. Figure~\ref{fig:profile-accuracy} reports both the median absolute prediction error and how often the prediction falls below the subsequently observed peak.
 
@@ -104,7 +104,7 @@ Memory demand is highly repeatable in these measurements. Median absolute predic
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/sacdad/eval/profile_accuracy_conditions.pdf}
-    \caption{Stage-level memory prediction under cold and warm execution. The panels report median absolute error and underprediction frequency.}
+    \caption{Stage-level memory prediction under cold and warm execution for MNIST GAN, MobileNetV2, and NanoGPT (4L). The panels report median absolute error and underprediction frequency.}
     \label{fig:profile-accuracy}
 \end{figure}
 
