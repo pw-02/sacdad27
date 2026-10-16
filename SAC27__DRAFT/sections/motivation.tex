@@ -10,7 +10,7 @@ We characterize the properties of partitioned zkML workloads that shape scheduli
 
 We use TinyBERT, MobileNetV2, and NanoGPT (4L), spanning convolutional, encoder, and autoregressive models. At the finest granularity they produce 121, 100, and 181 proof jobs, respectively. We compare monolithic proving with partitioned proving in which all jobs execute sequentially on the same prover. Keeping both configurations serial isolates the effect of proving granularity from any benefit due to inter-job parallelism.
 
-Both configurations use EZKL~\cite{ezkl} on a dual-socket AMD EPYC 9354 server with 755~GiB of RAM. For each proof job, we record execution time, process memory, and transitions between major proof-construction stages. Unless otherwise stated, runs begin cold so that setup and proving are both represented. We additionally evaluate a larger NanoGPT (10L) model to test whether partitioning changes which workloads are feasible on the same hardware.
+Both configurations use EZKL~\cite{ezkl} on a dual-socket AMD EPYC 9354 server with 128~GiB of RAM. For each proof job, we record execution time, process memory, and transitions between major proof-construction stages. Unless otherwise stated, runs begin cold so that setup and proving are both represented. We additionally evaluate a larger NanoGPT (10L) model to test whether partitioning changes which workloads are feasible on the same hardware.
 
 \subsection{Impact of Partitioning on Proving Cost}
 \label{sec:decomposition-benefit}
