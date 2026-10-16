@@ -1,7 +1,7 @@
 \section{Evaluation}
 \label{sec:evaluation}
 
-We evaluate \TITLE{} by asking four questions: how effectively it serves concurrent requests, how stage-aware admission compares with whole-job peak reservation, whether historical stage profiles are accurate enough for online admission, and how much setup reuse reduces repeated work. We additionally measure single-request scale-out and sensitivity to partition granularity.
+We evaluate \TITLE{} by asking four questions: when guarded stage-aware admission improves concurrent serving, whether historical stage profiles are accurate enough for online admission, how effectively partitioned requests scale across prover nodes, and how much setup reuse reduces repeated work. We additionally measure sensitivity to partition granularity.
 
 \subsection{Experimental Setup}
 \label{sec:eval-setup}
@@ -30,10 +30,10 @@ NanoGPT (4L)   & Seq.\ 64              & 4.2  & 181 \\
 \end{table}
 
 \textbf{Admission policies.}
-We compare two node-level admission policies while holding partitioning and coordinator scheduling fixed. \emph{Whole-job admission} reserves each job's predicted peak memory until completion. \emph{\TITLE{}} instead reserves the predicted memory of the stage about to run. Both policies use the same historical memory information, differing in the granularity at which it is reserved. This isolates the benefit of exploiting stage-varying memory demand from differences in prediction or placement.
+We compare whole-job peak reservation with \TITLE{}'s guarded stage-aware admission while holding partitioning and coordinator scheduling fixed. Whole-job admission reserves each job's predicted peak until completion. Guarded admission uses stage-level accounting only when whole-job reservation would block a stage whose predicted demand fits the currently available memory. Otherwise it falls back to whole-job admission. Both policies use the same historical memory information.
 
 \textbf{Profiles and traffic.}
-Cold runs generate setup artifacts during execution, while warm runs reuse matching artifacts generated beforehand. Historical profiles are collected in separate runs under the same setup condition and initialized identically across compared policies, so evaluation runs do not bootstrap from outcomes observed earlier in the same comparison. Burst experiments submit \(N\in\{1,4,8,16\}\) requests simultaneously and report request latency, batch makespan, and peak memory.
+Cold runs generate setup artifacts during execution, while warm runs reuse matching artifacts generated beforehand. Historical profiles are collected in separate runs under the same setup condition and initialized identically across compared policies, so evaluation runs do not bootstrap from outcomes observed earlier in the same comparison. Burst experiments submit concurrent requests and report request latency and batch makespan. To isolate the effect of memory pressure, we also repeat MobileNetV2 serving with the proving budget constrained to 48~GiB on the same machine.
 
 \subsection{Performance Under Concurrent Requests}
 \label{sec:eval-serving}
@@ -41,15 +41,17 @@ Cold runs generate setup artifacts during execution, while warm runs reuse match
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{figures/sacdad/eval/burst_serving.pdf}
-\caption{End-to-end performance under burst arrivals on a single prover node. We submit \(N\) requests simultaneously and compare whole-job admission with \TITLE{}'s stage-aware admission. Lower is better.}
+\caption{Concurrent request serving with guarded stage-aware admission. Under the default memory configuration, \TITLE{} retains whole-job admission when there is no recoverable memory slack. The constrained MobileNetV2 experiment limits the proving budget to 48~GiB to expose memory pressure. Lower is better.}
 \label{fig:burst-performance}
 \end{figure*}
 
-Figure~\ref{fig:burst-performance} compares the two admission policies as concurrent demand increases on a fixed prover node. At \(N=1\), the comparison isolates concurrency among jobs from one request. As \(N\) increases, jobs from multiple requests compete for the same machine, making conservative peak reservation increasingly likely to leave otherwise usable memory idle.
+Stage-aware admission is not universally beneficial because fine-grained partitioning already reduces many proof jobs to modest memory footprints. When whole-job peaks fit comfortably within the available budget, peak reservation can admit substantial concurrency and stage-level accounting has little memory capacity to recover. \TITLE{} therefore activates stage-aware admission only when peak-based reservation would block a stage that can safely execute with the memory currently available.
 
-\zkTBC{Report the final latency and makespan differences, including the largest improvement over whole-job admission.}
+Under the default configuration, the guard chooses stage-aware admission only for the lower-concurrency TinyBERT cases. Median latency falls from 545.1~s to 531.3~s for one request and from 1{,}857.2~s to 1{,}830.1~s for a burst of four, improvements of 2.5\% and 1.5\%. At higher TinyBERT concurrency and for the evaluated NanoGPT and MobileNetV2 default configurations, the guard retains whole-job admission, so the guarded policy matches the baseline rather than exposing additional concurrency that is unlikely to help.
 
-\zkTBC{Relate the observed differences to memory overlap, admission waiting, and CPU contention. Distinguish cases where stage-aware admission exposes useful overlap from cases where CPU saturation becomes the limiting resource, and state the supported conclusion about increasing concurrent demand.}
+The benefit becomes clearer when memory is the binding resource. With MobileNetV2 restricted to a 48~GiB proving budget, whole-job peak reservation blocks low-memory stages whose jobs will require more memory only later. Across bursts of 4, 8, and 16 requests, \TITLE{} reduces median latency from 42{,}057.1~s to 38{,}340.0~s, from 84{,}134.9~s to 78{,}689.0~s, and from 168{,}174.4~s to 161{,}068.5~s. These correspond to improvements of 8.8\%, 6.5\%, and 4.2\%. Batch makespan improves by 3.2\% and 4.3\% for bursts of 4 and 16, respectively, and is effectively unchanged at burst 8. An additional burst of two requests improves median latency by 4.8\%, from 21{,}100.7~s to 20{,}088.4~s.
+
+These results support a narrower conclusion than unconditional stage-aware scheduling. The useful quantity is recoverable memory slack, the difference between a job's predicted peak and the demand of its current stage. When that slack is small, guarded admission behaves like whole-job reservation. When memory pressure is high and the current stage is much smaller than the eventual peak, \TITLE{} can admit useful work that whole-job reservation would unnecessarily delay.
 
 \subsection{Single-Request Scale-Out}
 \label{sec:eval-scale-out}
