@@ -11,15 +11,23 @@ We characterize partitioned zkML execution and find substantial variation
 across jobs, strongly stage-dependent memory demand, and repeated circuit
 executions that support predictable resource profiles and reusable setup
 artifacts. We present \emph{zkInfer}, a distributed runtime that separates
-cluster-wide job placement from node-local stage admission. The coordinator
-schedules jobs across requests and prover nodes, while each node admits stages
-using historical memory profiles and current local capacity. zkInfer also
-reuses circuit-specific setup artifacts without modifying the underlying
-proving protocol.
+cluster-wide job placement from node-local admission. Because fine-grained
+partitioning already makes many jobs small, zkInfer activates stage-aware
+admission only when peak-based reservation would block a stage that fits in
+currently available memory. This guarded policy avoids exposing unnecessary
+concurrency while retaining the ability to recover memory slack when pressure
+is high. zkInfer also reuses circuit-specific setup artifacts without
+modifying the underlying proving protocol.
 
-We evaluate zkInfer across convolutional, generative, and transformer
-workloads under single-node, distributed, and concurrent execution.
-\textbf{[Insert final concurrent-serving and scale-out headline results.]}
-These results show that scalable zkML serving depends not only on proving
-performance, but also on how proof work is scheduled across shared resources.
+We evaluate zkInfer across convolutional and transformer workloads under
+single-node, distributed, and concurrent execution. Under the default memory
+configuration, the guard falls back to whole-job admission when stage-aware
+execution offers no additional memory overlap and yields modest latency gains
+for TinyBERT. Under a 48~GiB proving budget, where MobileNetV2 becomes memory
+constrained, stage-aware admission reduces median request latency by
+4.2--8.8\% across bursts of 4--16 requests. Scaling a single partitioned
+request from one to ten prover nodes further improves completion time by
+10.5--12.7\times across the three primary workloads. These results show that
+the value of stage-aware admission depends on memory pressure rather than
+request concurrency alone.
 \end{abstract}
