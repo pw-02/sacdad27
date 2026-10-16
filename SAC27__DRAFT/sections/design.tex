@@ -37,15 +37,7 @@ Stage-level packing remains local to each node. A coordinator could instead plac
 \subsection{Node-Local Resource Admission}
 \label{sec:local-admission}
 
-Once a proof job is assigned to a node, the node supervisor controls memory admission. Fine-grained partitioning often makes individual jobs small enough that whole-job peak reservation already permits substantial overlap. Stage-aware admission is therefore used selectively rather than for every stage transition. The supervisor enables it only when peak-based reservation would block a stage that fits within the memory currently available. Otherwise the job follows whole-job admission. A job remains pinned to the same node for an execution attempt; admission controls when it proceeds rather than migrating it between machines.
-
-\textbf{Guarded stage-aware admission.}
-Let \(\widehat{m}^{\max}_j\) be the predicted whole-job peak for job \(j\) and \(\widehat{m}_{j,s}\) the predicted demand of its current stage \(s\). The memory that whole-job admission would reserve but the current stage does not require is
-\begin{equation}
-    \Delta_{j,s}=\widehat{m}^{\max}_j-\widehat{m}_{j,s}.
-    \label{eq:recoverable-slack}
-\end{equation}
-We refer to \(\Delta_{j,s}\) as recoverable memory slack. The supervisor uses stage-aware admission only when the remaining local capacity is insufficient for \(\widehat{m}^{\max}_j\) but sufficient for \(\widehat{m}_{j,s}\). In that case, whole-job admission would unnecessarily block work that can safely execute. If the current stage already approaches the job peak, then \(\Delta_{j,s}\) is small and the policy naturally behaves like whole-job admission. This guard ties stage awareness directly to memory pressure rather than to a fixed concurrency level or an estimated percentage speedup.
+Once a proof job is assigned to a node, the node supervisor controls memory admission. Instead of reserving the job's predicted peak for its entire execution, the supervisor admits each controllable stage according to that stage's predicted demand and current local capacity. A job remains pinned to the same node for an execution attempt; stage admission controls when it proceeds rather than migrating it between machines.
 
 \textbf{Stage-level estimates.}
 For each model partition and proving configuration, the supervisor records recent peak memory observations separately for each stage. Starting with two prior observations, \TITLE{} uses the largest observed value while fewer than five observations are available. Once at least five are available, it uses the empirical 90th percentile of recent history, limiting the long-term effect of an isolated maximum while retaining headroom for variation. If no stage-specific history exists, the controller falls back to the job's whole-job estimate. Section~\ref{sec:profile-accuracy} evaluates these predictions. Admission is memory-based because memory capacity determines whether multiple proof stages can execute safely on the same node.
@@ -58,7 +50,7 @@ Let \(T_h\) be the physical memory of node \(h\), \(R_h\) a fixed system reserve
     \sum_{i\in A_h}\widehat{m}_i+\widehat{m}_{j,s}\leq B_h.
     \label{eq:stage-reservation}
 \end{equation}
-When the guard activates stage-aware admission, the value charged for a job changes at controlled stage boundaries. Several low-memory stages may therefore overlap even when the eventual peaks of their jobs could not.
+Unlike whole-job reservation, the value charged for a job changes at controlled stage boundaries. Several low-memory stages may therefore overlap even when the eventual peaks of their jobs could not.
 
 Reservation accounting alone is insufficient because prover processes may already hold part of the memory represented by their predictions. \TITLE{} therefore also checks live available memory. Let \(r_i\) be the current resident memory of an admitted process and \(F_h\) the operating system's available memory after the reserve. The remaining protected growth is
 \begin{equation}
