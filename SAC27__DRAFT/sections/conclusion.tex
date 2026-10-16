@@ -16,6 +16,6 @@ reuses expensive setup artifacts across requests. Partitioning already makes
 many proof jobs small, so stage-aware admission is most useful when memory
 capacity becomes the limiting resource. Under a 48~GiB MobileNetV2 proving
 budget, stage-aware admission reduces median request latency by 4.2--8.8\%
-across bursts of 4--16 requests. Partitioned requests also scale effectively
+across bursts of 2--16 requests. Partitioned requests also scale effectively
 across prover nodes, reaching \(10.5\)--\(12.7\times\) speedup from one to ten
 nodes across the three primary workloads.
