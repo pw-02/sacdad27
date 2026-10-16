@@ -18,10 +18,11 @@ ZKTorch~\cite{chen2025zktorch} exposes parallelism through specialized
 basic blocks and parallel proof accumulation, while
 DSperse~\cite{ivanov2025dsperse} considers proofs over selected model
 slices. Recent orchestration work such as push0~\cite{ahmadvand2026push0}
-addresses dispatch and recovery for distributed blockchain proving. These
-systems primarily scale an individual proof computation or proving pipeline.
-\TITLE{} instead treats proof jobs from concurrent inference requests as a
-shared serving workload with scheduling and resource management across the
+addresses dispatch and recovery for distributed blockchain proving. This line
+of work distributes proof construction or orchestrates proving tasks. In
+\TITLE{}, partitioning instead provides the units of work for a serving
+runtime. It does not by itself determine how jobs from concurrent inference
+requests should share finite memory or reusable setup artifacts across the
 prover pool.
 
 \noindent\textbf{ML serving systems.}
