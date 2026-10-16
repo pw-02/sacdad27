@@ -5,7 +5,6 @@ client API, and artifact storage. EZKL~\cite{ezkl} is the primary proving
 backend, with Halo2 providing the underlying proof system. We instrument the
 EZKL/Halo2 integration to expose proving stages and record the resource
 measurements used for admission and evaluation.
-
 Each proof job executes in an isolated subprocess, which lets the node
 supervisor attribute resident memory to individual jobs and contain worker
 failures. Admission is enforced at the instrumented backend boundaries before
