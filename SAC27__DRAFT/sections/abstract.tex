@@ -1,7 +1,7 @@
 \providecommand{\zkTBC}[1]{\textbf{[TO COMPLETE: #1]}}
 
 \begin{abstract}
-Zero-knowledge machine learning (zkML) can verify outsourced inference, but proof generation is slow and memory intensive. Partitioning a model into independently provable jobs reduces per-job cost and exposes parallelism, but it does not by itself determine how those jobs should share prover resources when requests execute concurrently.
+Zero-knowledge machine learning (zkML) can verify outsourced inference, but proof generation is slow and memory intensive. Partitioning a model into independently provable jobs can reduce proving cost and peak memory while exposing parallelism, but it does not by itself determine how those jobs should share prover resources when requests execute concurrently.
 
 We characterize partitioned zkML execution and find three properties that shape this scheduling problem. Proof jobs differ widely in runtime and peak memory, memory demand changes substantially across proving stages, and repeated executions can reuse expensive circuit-specific setup artifacts. We present \emph{zkInfer}, a distributed runtime that treats partitioned proof generation as a serving workload. A cluster-wide coordinator assigns jobs across requests and prover nodes, while each node performs stage-aware memory admission using recent resource profiles. zkInfer also reuses setup artifacts without changing the underlying proving protocol.
 
