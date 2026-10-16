@@ -1,433 +1,126 @@
-% Section fragment for the SAC 2027 manuscript.
-% Preamble requirement: \usepackage{booktabs}
-% Numerical evidence: upload/runs.tar.gz, three sequential cold runs.
-% TBC fields are intentionally unfilled; they must not become empirical claims.
-% Figures are compilable placeholders; replace boxes with \includegraphics.
-% Set the manuscript's section counter to 2 if compiling this fragment alone.
-
-
 \providecommand{\zkTBC}[1]{\textbf{[TO COMPLETE: #1]}}
-
 
 \section{Characterizing zkML Serving Workloads}
 \label{sec:characterization}
-This section characterizes the properties of partitioned zkML workloads that shape scheduling decisions in a shared prover. We focus on four questions. How does partition granularity affect the size, runtime, memory demand, and available parallelism of proof jobs? How does resource usage evolve over a job's execution rather than only at its peak? How much circuit-specific state can be reused across repeated executions? And, when requests overlap, how much concurrency can be admitted without exceeding available memory?
 
-We answer these questions across multiple model families and partitioning configurations. First, we quantify how partition granularity changes job cost and the amount of parallel work exposed by a single inference. We then profile memory usage over the lifetime of individual jobs and test whether these profiles are stable across repeated executions of the same circuit. Next, we measure the effect of reusing circuit-specific setup state by comparing cold and warm executions. Finally, we evaluate concurrent execution and quantify the additional overlap enabled by accounting for stage-level resource demand rather than reserving each job's peak memory for its entire lifetime.
-
-% This analysis quantifies the additional concurrency exposed by finer-grained resource accounting and motivates the runtime mechanisms described in Section~4.
+We characterize the properties of partitioned zkML workloads that shape
+scheduling in a shared prover. We focus on three questions: how partitioning
+changes proving cost, how runtime and memory vary across proof jobs, and how
+memory demand evolves within a job.
 
 \subsection{Workloads and Measurement Method}
 \label{sec:characterization-method}
-Our characterization uses TinyBERT, MobileNetV2, and NanoGPT (4L),
-spanning convolutional and transformer architectures with both encoder
-and autoregressive models. Table~\ref{tab:models} summarizes their model
-and proving characteristics. We export each model as an ONNX computation
-graph and partition it at the finest granularity considered in our
-experiments, producing 120, 100, and 181 proof jobs, respectively.
-Coarser groupings are used where needed to study how partition size
-changes the resulting workload.
 
-We compare monolithic proving, where the full model is encoded as a
-single circuit, with partitioned proving, where all proof jobs are
-executed sequentially on the same prover. This keeps execution serial in
-both cases and lets us attribute differences to proving granularity
-rather than inter-job parallelism. Both configurations use
-EZKL~\cite{ezkl} on a machine with two AMD EPYC 9354 processors and
-755~GiB of RAM. We also evaluate NanoGPT (10L) in a separate scaling
-experiment to examine whether partitioning makes a larger transformer
-model feasible to prove.
-
-For each proof job, we record execution time, process memory usage, and
-transitions between major proof-construction stages. These measurements
-capture variation across jobs and over time within a job, allowing us to
-distinguish sustained demand from short-lived peaks. Unless otherwise
-stated, runs begin from a cold state, with reusable setup artifacts
-regenerated to capture the full proof-construction lifecycle.
-
-
-%and its evolution over time to distinguish short-lived memory spikes from sustained resource demand.
-
-% For analysis, we divide each proof job into three high-level stages. \emph{Preparation} covers calibration, circuit compilation, preparation of the SRS state used by the backend, and request-specific witness generation. \emph{Key generation} constructs the proving and verification keys for the circuit. \emph{Proving} then generates a proof for the request-specific witness using that circuit and its proving key. This decomposition separates reusable circuit-specific work from request-specific proving work and allows us to study how resource demand changes across the execution pipeline.
-
-
-
-
-
-
-
-% \textbf{Implication.}
-% Proof jobs differ both from one another and over the course of their own execution. Effective scheduling therefore requires more than counting active jobs or reserving each job's peak memory throughout its lifetime. The runtime must account for predicted execution cost and time-varying resource demand when deciding which jobs can safely overlap.
-
-% We first ask whether partitioning is beneficial even before exploiting concurrency. Comparing sequential partitioned execution with monolithic proving isolates the effect of proving granularity itself.
-
+We use TinyBERT, MobileNetV2, and NanoGPT (4L), spanning convolutional,
+encoder, and autoregressive models. At the finest granularity they produce
+120, 100, and 181 proof jobs, respectively. We compare monolithic proving
+with partitioned proving in which all jobs execute sequentially on the same
+prover, isolating the effect of proving granularity from inter-job parallelism.
+Both use EZKL~\cite{ezkl} on a dual-socket AMD EPYC 9354 server with
+755~GiB of RAM. We record per-job execution time, process memory, and major
+proof-stage transitions. Unless otherwise stated, runs begin cold so that the
+full setup and proving lifecycle is represented.
 
 \subsection{Impact of Partitioning on Proving Cost}
 \label{sec:decomposition-benefit}
 
-Across all three workloads, partitioning reduces end-to-end proving time
-even when the resulting proof jobs are executed serially on the same
-prover. Figure~\ref{fig:partition-benefits} compares monolithic request
-completion time with partitioned request completion time under serial
-execution. Relative to monolithic proving, request completion time
-decreases by 40.6\% for TinyBERT, 16.3\% for MobileNetV2, and 60.5\%
-for NanoGPT (4L). Thus, despite introducing additional prover
-invocations and partition boundaries, decomposing a model into smaller
-circuits can reduce the total proving time required to complete an
-inference request even without inter-job parallelism.
-
-Partitioning also substantially reduces peak memory. Relative to
-monolithic proving, peak memory falls by 80.5\% for TinyBERT, 91.5\%
-for MobileNetV2, and 98.0\% for NanoGPT (4L). Under sequential
-partitioned execution, the prover need only accommodate the largest
-individual proof job rather than the full monolithic circuit. This
-reduction is particularly important for larger models. For example,
-monolithic proving of NanoGPT (10L) exhausts available memory, whereas
-partitioned execution completes with a peak memory usage of only
-12.0~GiB.
+Figure~\ref{fig:partition-benefits} shows that partitioning reduces proving
+time even when jobs execute serially. Relative to monolithic proving,
+completion time falls by 40.6\% for TinyBERT, 16.3\% for MobileNetV2, and
+60.5\% for NanoGPT (4L). Peak memory falls by 80.5\%, 91.5\%, and 98.0\%,
+respectively. Partitioning also makes larger models feasible: monolithic
+NanoGPT (10L) exhausts available memory, whereas partitioned execution
+completes with a 12.0~GiB peak.
 
 \textbf{Implication.}
-Partitioning changes the workload presented to the runtime, not only by
-exposing additional parallelism but also by reducing the cost and memory
-footprint of individual proof jobs. It can also make models feasible that
-cannot be proved monolithically on the same hardware. The resulting
-proof jobs, however, are highly uneven in both runtime and memory demand,
-which we characterize next.
+Partitioning changes the workload presented to the runtime by reducing the
+cost and memory footprint of individual proof jobs while exposing additional
+parallelism.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/sacdad/partitioning_benefits.pdf}
-    \caption{
-       Monolithic and partitioned proving.
-    Partitioned request time is the sum of all proof-job runtimes;
-    memory is the largest memory footprint observed during the
-    request. OOM indicates that proving exceeded available
-    memory.
-    }
+    \caption{Monolithic and partitioned proving. Partitioned request time is
+    the sum of proof-job runtimes; memory is the largest observed job footprint.
+    OOM indicates that proving exceeded available memory.}
     \label{fig:partition-benefits}
 \end{figure}
 
-
-
 \begin{figure*}[t]
-
     \centering
     \includegraphics[width=\textwidth]{figures/sacdad/job_heterogeneity.pdf}
-    \caption{
-        Empirical cumulative distributions of proof-job execution time
-        and peak memory for MNIST GAN, MobileNetV2, and NanoGPT (4L).
-        Each curve reports the fraction of jobs at or below the
-        corresponding execution-time or peak-memory value.
-    }
+    \caption{Empirical distributions of proof-job execution time and peak
+    memory for TinyBERT, MobileNetV2, and NanoGPT (4L).}
     \label{fig:job-heterogeneity}
 \end{figure*}
+
+\subsection{Heterogeneity Across Proof Jobs}
+\label{sec:job-heterogeneity}
+
+Figure~\ref{fig:job-heterogeneity} shows substantial heterogeneity within
+each request. TinyBERT's longest job takes 1,461.3~s compared with a 4.47~s
+median, a \(327\times\) difference, and accounts for 40.9\% of aggregate
+job time. MobileNetV2 and NanoGPT show smaller but still substantial spreads
+of approximately \(21\times\) and \(31\times\).
+
+Memory is similarly uneven. Median per-job peaks are 0.21, 3.38, and
+0.22~GiB for TinyBERT, MobileNetV2, and NanoGPT, while the largest reach
+51.61, 41.45, and 5.70~GiB. A fixed concurrency limit therefore says little
+about either remaining request work or instantaneous memory pressure.
+
+\textbf{Implication.}
+Runtime estimates help identify jobs that may dominate request completion,
+while memory estimates determine which jobs can safely share a prover node.
 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=\textwidth]{figures/sacdad/stage_memory.pdf}
-    \caption{Memory demand over time for the highest-memory proof job in each workload. Shaded regions identify preparation, key generation, and proving, while the dotted line marks the peak observed over the trace.}
+    \caption{Memory demand over time for the highest-memory proof job in each
+    workload. Shaded regions identify preparation, key generation, and proving.}
     \label{fig:stage-memory}
 \end{figure*}
-
-
-\subsection{Heterogeneity Across Proof Jobs}
-\label{sec:job-heterogeneity}
-Figure~\ref{fig:job-heterogeneity} shows the empirical distributions of
-proof-job execution time and peak memory across the three workloads.
-All three exhibit substantial heterogeneity. TinyBERT is the most
-extreme case. Its longest-running job takes 1,461.30~s compared with a
-median of 4.47~s, a \(327\times\) difference, and accounts for 40.9\%
-of aggregate job execution time. MobileNetV2 and NanoGPT (4L) show the
-same pattern at smaller magnitude, with their longest-running jobs
-approximately \(21\times\) and \(31\times\) slower than the
-corresponding medians.
-
-This skew means that request progress is not well represented by the
-number of unfinished jobs. A request with only a few jobs remaining may
-still contain much of its proving work, while a request with many
-remaining jobs may consist largely of short proofs. Exposing many proof
-jobs therefore does not by itself guarantee a short request completion
-time when a small subset lies on the dominant execution path.
-
-Memory demand is similarly uneven. Median per-job peak memory is
-0.21, 3.38, and 0.22~GiB for TinyBERT, MobileNetV2, and NanoGPT (4L),
-respectively, while the largest observed peaks reach 51.61, 41.45, and
-5.70~GiB. As Figure~\ref{fig:job-heterogeneity} shows, most jobs require
-far less memory than the largest jobs in the same workload. A fixed
-concurrency limit therefore provides little indication of actual memory
-pressure, since the same number of active jobs can correspond to very
-different aggregate memory requirements.
-
-\textbf{Implication.}
-Runtime and memory constrain scheduling in different ways. Runtime
-estimates help identify proof jobs that may dominate request completion,
-while memory estimates determine which jobs can safely share a prover
-node. A scheduler that reasons only about the number of active jobs
-captures neither effect. We next examine whether memory demand also
-changes within a proof job, further affecting which work can safely
-overlap.
-\begin{table}[t]
-\centering
-% \small
-\setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.1}
-\begin{tabular}{lccccc}
-\toprule
-& \multicolumn{3}{c}{Setup time}
-& \multicolumn{2}{c}{Proving keys} \\
-\cmidrule(lr){2-4}
-\cmidrule(lr){5-6}
-Model
-& \shortstack{Generation\\(s)}
-& \shortstack{Local reuse\\(s)}
-& \shortstack{Saved\\(\%)}
-& \shortstack{Total\\(GiB)}
-& \shortstack{p90\\(GiB)} \\
-\midrule
-TinyBERT
-& 1,636.34 & 23.54 & 98.56 & 68.78 & 1.50 \\
-MobileNetV2
-& 14,608.66 & 390.99 & 97.32 & 287.47 & 6.08 \\
-NanoGPT (4L)
-& 1,812.34 & 67.09 & 96.30 & 59.10 & 0.75 \\
-\bottomrule
-\end{tabular}
-\caption{
-Aggregate setup time and proving-key storage per request.
-Reuse loads artifacts from the prover node's local filesystem.
-Times sum per-job durations rather than request latency.
-Total and p90 denote the summed and 90th-percentile per-partition
-proving-key sizes.
-}
-\label{tab:setup-reuse}
-\end{table}
 
 \begin{table}[t]
 \centering
 \setlength{\tabcolsep}{5pt}
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.1}
 \begin{tabular}{lcc}
 \toprule
-\textbf{Workload}
-& \shortstack{\textbf{Time at}\\
-              \textbf{$\geq 90\%$ of peak (\%)}}
-& \shortstack{\textbf{Peak /}\\
-              \textbf{average memory}} \\
+Workload & \shortstack{Time at $\geq90\%$\\of peak (\%)} &
+\shortstack{Peak / average\\memory} \\
 \midrule
 TinyBERT      & 4.8  & $4.07\times$ \\
 MobileNetV2   & 3.5  & $2.53\times$ \\
 NanoGPT (4L)  & 13.3 & $2.22\times$ \\
 \bottomrule
 \end{tabular}
-\caption{
-Temporal variation in memory demand for the highest-memory proof job
-in each workload. Time at peak reports the fraction of execution spent
-at or above 90\% of the job's observed peak memory. Average memory is
-weighted by the duration represented by each sample.
-}
+\caption{Temporal variation in memory demand for the highest-memory job in
+ each workload.}
 \label{tab:temporal-memory}
 \end{table}
-
-
 
 \subsection{Resource Demand Across Execution Stages}
 \label{sec:stage-resource-demand}
 
-Peak memory determines whether a proof job can execute on a node, but it
-does not reveal how memory demand evolves over the course of execution.
-We therefore sample process memory throughout each proof and align the
-samples with three high-level stages of the proving pipeline.
-\emph{Preparation} includes circuit setup and request-specific witness
-generation, \emph{key generation} constructs the circuit's proving and
-verification keys, and \emph{proving} generates the proof using the
-witness and proving key. This lets us compare stage-level demand with the job's whole-execution
-peak.
-
-Figure~\ref{fig:stage-memory} shows the highest-memory proof job from
-each workload. In all three cases, memory demand is substantially lower
-during preparation than during key generation and proving. TinyBERT
-rises from below 6.38~GiB during preparation to 51.61~GiB during
-proving, while MobileNetV2 rises from below 0.92~GiB to 41.45~GiB.
-NanoGPT (4L) shows the same pattern at smaller scale, reaching
-5.70~GiB during proving. Table~\ref{tab:temporal-memory} quantifies this variation. Arocss all 
-TinyBERT, MobileNetV2, and NanoGPT jobs, they spend only 4.8\%, 3.5\%, and
-13.3\% of execution at or above 90\% of peak memory. Their peaks are
-also \(4.07\times\), \(2.53\times\), and \(2.22\times\) their
-time-averaged memory consumption, respectively.
+Peak memory does not reveal how demand evolves during execution. We therefore
+align process-memory samples with preparation, key generation, and proving.
+Figure~\ref{fig:stage-memory} shows that the highest-memory jobs spend only
+4.8\%, 3.5\%, and 13.3\% of execution at or above 90\% of peak memory for
+TinyBERT, MobileNetV2, and NanoGPT, respectively. Their peaks are
+\(4.07\times\), \(2.53\times\), and \(2.22\times\) their time-averaged
+memory consumption (Table~\ref{tab:temporal-memory}).
 
 \textbf{Implication.}
-Whole-job peak memory is therefore a conservative basis for admission
-throughout execution. Stage-aware admission could expose additional
-concurrency by allowing lower-memory work to proceed while delaying
-memory-intensive stages until sufficient capacity is available. This
-requires predicting stage demand before execution, which we examine
-next.
-
-
-
-% \subsection{Reusable Setup Artifacts}
-% \label{sec:reusable-artifacts}
-
-% Repeated inference requests can reuse circuit-specific setup artifacts
-% when the model partition and proving configuration remain unchanged.
-% These artifacts include the compiled circuit and its proving and
-% verification keys, which can be generated once and reused across
-% requests. We quantify this opportunity by comparing cold execution, in
-% which the artifacts are generated from scratch, with warm execution, in
-% which an existing copy is loaded from the prover node's local
-% filesystem. We additionally measure the storage footprint of the proving
-% keys. 
-% % This exposes a placement trade-off because assigning a job to a
-% % node that already holds the required artifacts can avoid restoring large
-% % files from shared storage.
-% Table~\ref{tab:setup-reuse} shows that local setup reuse eliminates more
-% than 96\% of aggregate setup time across all three workloads. This
-% benefit, however, comes with a substantial storage footprint. Aggregate
-% proving-key sizes range from 59.10~GiB for NanoGPT (4L) to 287.47~GiB
-% for MobileNetV2, with individual MobileNetV2 keys reaching 6.08~GiB at
-% the 90th percentile. Retaining reusable artifacts can therefore consume
-% hundreds of gigabytes per model. This creates a placement and
-% cache-management trade-off. Scheduling a proof on a node that already
-% holds its setup can avoid substantial recomputation and transfer, while
-% maintaining that locality consumes finite node storage.
-
-% \textbf{Implication.}
-% Artifact locality should influence placement and cache management, but
-% should not override memory feasibility.
-
-
-% \label{sec:resuable-state}
-% \begin{table*}[t]
-% \centering
-% % \small
-% \setlength{\tabcolsep}{4pt}
-% \renewcommand{\arraystretch}{1.15}
-% \begin{tabular}{lccccccc}
-% \toprule
-% & \textbf{Generation}
-% & \multicolumn{2}{c}{\textbf{Reuse from local storage}}
-% & \multicolumn{2}{c}{\textbf{Reuse from cloud storage}}
-% & \multicolumn{2}{c}{\textbf{Proving-key size}} \\
-% \cmidrule(lr){3-4}
-% \cmidrule(lr){5-6}
-% \cmidrule(lr){7-8}
-% \textbf{Model}
-% & \textbf{Time (s)}
-% & \textbf{Time (s)}
-% & \textbf{Saved (\%)}
-% & \textbf{Time (s)}
-% & \textbf{Saved (\%)}
-% & \textbf{Total (GiB)}
-% & \textbf{p90 (GiB)} \\
-% \midrule
-% MNIST GAN
-% & 1,056.14 & 38.57 & 96.35 & -- & -- & 30.93 & 1.63 \\
-% MobileNetV2
-% & 14,608.66 & -- & -- & -- & -- & 287.47 & 6.08 \\
-% NanoGPT (4L)
-% & 1,812.34 & -- & -- & -- & -- & 59.10 & 0.75 \\
-% \bottomrule
-% \end{tabular}
-% \caption{
-% Aggregate setup time and proving-key sizes per inference request.
-% Times sum per-job durations, not end-to-end request latency;
-% percentages report reductions relative to generation from scratch.
-% Total and p90 denote summed and 90th-percentile individual
-% proving-key sizes. 
-% }
-% \label{tab:setup-reuse}
-% \end{table*}
-
-% Repeated inference requests may reuse circuit-specific setup artifacts, including compiled circuits and proving keys, provided that the circuit and proving configuration are unchanged. Each request still requires a fresh witness and proof, but repeated calibration, compilation, and key generation can be avoided. We therefore compare three setup paths: cold setup generation, local reuse from artifacts already present on the worker, and shared-storage reuse, where previously generated artifacts are retrieved from shared storage before being loaded by the prover. In each case, we measure the time until all artifacts required for proving are available for use.
-
-% Table~\ref{tab} shows that setup reuse substantially reduces repeated setup cost for MNIST GAN. Across all proof jobs, cold setup generation requires 1,056.14 seconds, whereas local reuse requires 38.57 seconds, a reduction of 96.35\%. Local reuse still incurs artifact lookup, restoration, and loading costs, but avoids repeated calibration, compilation, and key generation. MobileNetV2 and NanoGPT require 14,608.66 and 1,812.34 seconds of aggregate cold setup time, respectively; their local-reuse costs, together with shared-storage reuse costs for all workloads, remain to be measured.
-% The reusable artifacts are also large. Proving keys alone total 30.93~GiB for MNIST GAN, 287.47~GiB for MobileNetV2, and 59.10~GiB for NanoGPT. Their 90th-percentile per-job sizes are 1.63, 6.08, and 0.75~GiB, respectively. Consequently, reuse does not eliminate setup-related data movement: a worker without a local copy may need to retrieve several gigabytes before proving can begin. The cost of reuse therefore depends not only on whether setup artifacts already exist, but also on where they reside.
-
-% Artifact location therefore introduces a placement trade-off. Assigning a job to a worker with a local copy avoids downloading its setup artifacts, but that worker may have less available compute or memory than another node. A less-loaded worker may instead need to retrieve the artifacts from shared storage before execution. Concurrent retrievals may also compete for network and storage bandwidth. The measured artifact sizes motivate considering setup locality alongside resource availability; the shared-storage measurements will quantify the additional startup cost when a local copy is absent.
-
-% This creates a placement trade-off. Assigning a job to a worker that already holds its setup state avoids a potentially large transfer, but that worker may currently have less available compute or memory than another node. Conversely, assigning the job to a less-loaded worker may require first retrieving its setup artifacts from shared storage. Under concurrent requests, multiple such transfers may also contend for shared network and storage bandwidth. These observations motivate a placement policy that considers setup locality together with current node resource availability, rather than treating all feasible workers as equivalent.
-
-
-% \subsection{Memory Utilization Under Concurrent Requests}
-% \label{sec:effect-of-concurrency}
-
-% The temporal variation in Figure~\ref{fig:stage-memory} suggests that
-% reserving each proof job's peak memory for its full execution can leave
-% substantial capacity unused. We quantify this opportunity using trace
-% replay. Starting from isolated proof-job executions, we replay the
-% measured stage durations and memory demands under a fixed node-memory
-% budget while varying the number of concurrent request replicas.
-
-% We compare two memory models under the same offline memory-fit
-% scheduling heuristic. The peak-reservation baseline treats each proof
-% job as requiring its maximum observed memory for its entire execution.
-% The stage-aware replay instead reserves the measured peak of the stage
-% currently executing. Thus, the comparison changes only the granularity
-% at which memory demand is represented, while preserving the measured
-% execution time and memory demand of each stage.
-
-% \subsection{Memory Utilization Under Concurrent Requests}
-% \label{sec:effect-of-concurrency}
-% The temporal variation in Figure~\ref{fig:stage-memory} suggests that
-% reserving each proof job's peak memory for its full execution can leave
-% substantial capacity unused. We quantify this opportunity using trace
-% replay. Starting from isolated proof-job executions, we replay the
-% measured stage durations and memory demands under a fixed node-memory
-% budget while varying the number of concurrent request replicas.
-
-% We compare two memory models under the same offline memory-fit
-% scheduling heuristic. The peak-reservation baseline treats each proof
-% job as requiring its maximum observed memory for its entire execution.
-% The stage-aware replay instead reserves the measured peak of the stage
-% currently executing. Thus, the comparison changes only the granularity
-% at which memory demand is represented, while preserving the measured
-% execution time and memory demand of each stage.
-
-
-
-% The preceding measurements show that proof jobs are heterogeneous in memory demand and that the resource requirements of an individual job vary over its execution. Concurrent requests provide additional opportunities to exploit these properties, because jobs from different requests can occupy different execution stages at the same time. We therefore ask whether accounting for stage-specific memory requirements, rather than reserving each job's peak memory throughout execution, permits additional overlap that reduces completion time.
-
-% We perform a trace-driven simulation using the isolated cold-setup executions of all proof jobs in each workload. Each simulated inference request contains the measured jobs from one request. We submit 1, 4, 8, 16, 32, or 64 requests simultaneously and compare two memory-accounting models. Under \emph{whole-job reservation}, an executing job reserves its sampled peak process memory for its entire lifetime. Under \emph{stage-specific reservation}, the job instead reserves the sampled peak memory of its current execution stage and may wait before entering the next stage if insufficient memory is available. Both models allow multiple jobs to execute concurrently and use the same memory-fit scheduling heuristic; whole-job reservation is therefore a resource-accounting baseline rather than a sequential-execution baseline.
-
-% The simulation preserves the stage durations measured during isolated execution as concurrency increases. It consequently does not model slowdown from CPU contention, memory-bandwidth contention, storage interference, or other effects of colocating proof jobs. The simulation also does not account for memory retained by jobs waiting between stages. The experiment therefore estimates the \emph{packing opportunity} under these assumptions, rather than predicting end-to-end performance on a shared node. We report makespan, measured from simultaneous request submission until completion of the final request. 
-
-% Figure~\ref{fig:concurrency-packing} shows the resulting makespan under a 128~GiB memory budget. At 64 concurrent requests, stage-specific reservation reduces simulated makespan from 659.8 to 370.1 minutes for MNIST GAN, from 2,429.3 to 2,005.2 minutes for MobileNetV2, and from 67.6 to 51.2 minutes for NanoGPT, corresponding to reductions of 43.9\%, 17.5\%, and 24.3\%, respectively. We repeat the analysis using memory budgets of 64, 256, and 747~GiB. Across the four budgets at 64 requests, reductions range from 27.0--43.9\% for MNIST GAN, 17.0--24.3\% for MobileNetV2, and 21.6--24.3\% for NanoGPT. Benefits are not universal: the heuristic produces a 6.1\% increase in makespan for MobileNetV2 at four requests and 747~GiB.
-
-% \textbf{Implication.}
-% Accounting for stage-specific memory demand can permit useful overlap among proof jobs from concurrent requests. The magnitude varies across workloads and memory budgets, but the simulated reductions motivate controlling when jobs enter memory-intensive stages. These results quantify an opportunity under cold setup; the system evaluation determines how much is realized during actual concurrent execution.
-
-
-
-
-
-
-% % \subsection{Concurrent Interactive and Batch Workloads}
-% \subsection{Effect of Concurrent Workloads}
-% \label{sec:effect-of-concurrency}
-
-% The previous sections considered the resource behaviour of individual proof jobs. This variation becomes operationally important when several inference requests coexist. Each request contributes many independently executable proof jobs, and jobs from different requests may simultaneously occupy low- and high-memory phases. Reserving every job's eventual peak memory for its full execution can therefore prevent work from running even when sufficient memory is available for its current phase. To quantify this opportunity independently of zkInfer's implementation, we replay the measured proof traces under two idealized execution models. The peak-reservation baseline reserves each job's measured maximum memory from admission until completion. The phase-aware oracle knows the measured memory requirement of every phase in advance and allows jobs to overlap whenever their current phases fit within host memory. Phase durations remain exactly those observed during characterization. Consequently, any reduction in makespan comes only from increased overlap between existing proof computations rather than faster proof generation.
- 
-
-% Figure~X shows makespan as request concurrency increases from 4 to 64 requests. Under low concurrency, the two execution models are similar because the available jobs already fit within host memory. As concurrency increases, the peak-reservation baseline increasingly serializes proof jobs whose maximum memory requirements cannot coexist. The phase-aware oracle can instead execute lower-memory phases alongside memory-intensive work, causing the two curves to diverge. This effect appears at lower concurrency on memory-constrained hosts, while the 747~GiB server requires a larger request population before memory becomes the limiting resource. For MobileNetV2 on a 64~GiB host, phase-aware execution reduces makespan by X\%, Y\%, and Z\% at 8, 32, and 64 concurrent requests. On the 747~GiB server, the difference remains negligible until N requests coexist, after which the oracle reduces makespan by X\%. NanoGPT exhibits [whatever the result shows], whereas MNIST GAN sees less benefit because its execution is dominated by a single long-running proof job.
- 
-
-% The large-request replay uses an oracle resource trace but a practical scheduling heuristic because globally optimal scheduling over hundreds or thousands of jobs is intractable. To verify that the observed opportunity is not solely an artifact of that heuristic, we solve several small instances exactly. For example, on a 64~GiB host, the optimal makespan for the highest-memory MNIST and MobileNetV2 jobs falls from 1,924.1~s under peak reservation to 1,483.6~s when their measured phase demands are available, a 22.9% reduction.
-
-% \textbf{Implication.} The measurements expose a gap between the concurrency permitted by whole-job peak reservation and that permitted by the resources jobs actually require as they progress through proof generation. Exploiting this gap online is harder than the oracle replay suggests. Future phase requirements are not known when a request arrives, node capacity changes as other jobs progress, and a distributed coordinator should not track every local phase transition. These observations motivate a runtime that learns resource demand from previous executions, places proof jobs using coarse global information, and performs fine-grained admission locally using current node state.
-
+Whole-job peak reservation is conservative for much of execution. A runtime
+can expose additional concurrency by admitting stages according to their
+current memory demand rather than reserving every job's eventual peak for its
+entire lifetime.
 
 \begin{figure*}[t]
     \centering
     \includegraphics[width=\textwidth]{figures/sacdad/architecture.pdf}
-    \caption{
-  Architecture of \TITLE{}. Concurrent inference requests are decomposed
-into proof jobs and managed by a global coordinator. The coordinator
-tracks request progress and places jobs across prover nodes using
-historical execution profiles and reusable setup artifacts. Each node
-performs local stage admission using current memory availability and
-stage-level resource profiles. Large request and proving artifacts are
-accessed through shared storage by reference.
-    }
+    \caption{Architecture of \TITLE{}. A global coordinator places proof jobs
+    across prover nodes, while each node performs local stage admission using
+    current memory availability and historical resource profiles.}
     \label{fig:architecture}
 \end{figure*}
-
