@@ -69,9 +69,9 @@ The worker reports show that the scheduler distributes proving work evenly at la
 \end{figure}
 
 \textbf{Execution breakdown.}
-Table~\ref{tab:scaleout-overhead} separates proof execution from shared-storage transfer. Proof generation remains the dominant compute cost, while verification is small by comparison. Shared-storage cost is dominated by reads because prover nodes retrieve request and reusable artifacts, whereas generated outputs are comparatively small.
+Table~\ref{tab:scaleout-overhead} separates proof execution from shared-storage transfer for all three workloads. Proof generation remains the dominant compute cost: mean aggregate proving time is 1{,}838.5~s for TinyBERT, 4{,}233.1~s for MobileNetV2, and 746.3~s for NanoGPT (4L), while verification contributes only 4.7~s, 31.8~s, and 7.1~s, respectively. Shared-storage cost is likewise dominated by reads. Mean aggregate S3 read time is 472.0~s for TinyBERT, 819.9~s for MobileNetV2, and 264.0~s for NanoGPT, compared with 21.7~s, 17.5~s, and 20.3~s of writes.
 
-Aggregate S3 read time also remains broadly stable as the prover pool grows, ranging from 247--274~s for NanoGPT and 798--848~s for MobileNetV2 across the 1--10 node runs. Thus, scaling a fixed request across more prover nodes does not substantially increase its total transfer work over the evaluated range. These aggregate times may overlap in wall-clock execution, so they explain where work is spent rather than summing directly to request latency.
+For MobileNetV2 and NanoGPT, aggregate S3 read time also remains broadly stable as the prover pool grows, ranging from 798--848~s and 247--274~s, respectively, across the 1--10 node runs. Thus, for these workloads, scaling a fixed request across more prover nodes does not substantially increase its total transfer work over the evaluated range. The aggregate times in Table~\ref{tab:scaleout-overhead} may overlap in wall-clock execution, so they explain where work is spent rather than summing directly to request latency.
 
 \begin{table}[t]
 \centering
@@ -96,7 +96,7 @@ NanoGPT (4L) & 746.3  & 7.1  & 264.0 & 20.3 \\
 \subsection{Resource Profile Accuracy}
 \label{sec:profile-accuracy}
 
-\TITLE{} estimates stage memory from recent executions of the same model partition. We therefore test whether repeated executions are stable enough for those histories to support online admission. The repeated-run microbenchmark uses MNIST GAN, MobileNetV2, and NanoGPT (4L); the serving experiments continue to use the primary workloads in Table~\ref{tab:models}. The microbenchmark executes representative partitions in isolation and records the peak memory of the admission-relevant execution region. Cold runs include the fused setup-and-prove path, while warm runs measure proving after matching setup artifacts are already available.
+\TITLE{} estimates stage memory from recent executions of the same model partition. We therefore test whether repeated executions are stable enough for those histories to support online admission. The repeated-run microbenchmark uses the same three workloads as the main evaluation: TinyBERT, MobileNetV2, and NanoGPT (4L). It executes representative partitions in isolation and records the peak memory of the admission-relevant execution region. Cold runs include the fused setup-and-prove path, while warm runs measure proving after matching setup artifacts are already available.
 
 For each execution, the prediction is constructed using only earlier observations from the same partition and setup condition. With fewer than five prior measurements, \TITLE{} uses the largest observed peak. Once five are available, it uses the empirical 90th percentile of recent history. Figure~\ref{fig:profile-accuracy} reports both the median absolute prediction error and how often the prediction falls below the subsequently observed peak.
 
@@ -105,7 +105,7 @@ Memory demand is highly repeatable in these measurements. Median absolute predic
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/sacdad/eval/profile_accuracy_conditions.pdf}
-    \caption{Stage-level memory prediction under cold and warm execution for MNIST GAN, MobileNetV2, and NanoGPT (4L). The panels report median absolute error and underprediction frequency.}
+    \caption{Stage-level memory prediction under cold and warm execution for TinyBERT, MobileNetV2, and NanoGPT (4L). The panels report median absolute error and underprediction frequency.}
     \label{fig:profile-accuracy}
 \end{figure}
 
