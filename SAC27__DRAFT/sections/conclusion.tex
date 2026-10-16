@@ -3,7 +3,7 @@
 \TITLE{} uses memory as the primary admission resource because memory capacity
 determines whether proof stages can safely overlap on a node. The same
 framework could incorporate CPU estimates when CPU contention dominates. We
-also treat partitioning and runtime scheduling separately: partitioning defines
+also treat partitioning and runtime scheduling separately. Partitioning defines
 the proof jobs, while \TITLE{} controls their execution. Finally, the
 coordinator provides request-level fairness rather than explicit deadlines or
 priorities, which could be added as alternative scheduling objectives.
@@ -12,7 +12,10 @@ priorities, which could be added as alternative scheduling objectives.
 \TITLE{} treats partitioned zkML proof generation as a distributed serving
 problem. It separates cluster-wide job placement from node-local stage
 admission, uses historical resource profiles to control memory safely, and
-reuses expensive setup artifacts across requests. Our evaluation shows that
-partitioning exposes heterogeneous proof jobs with strongly time-varying memory
-demand and that those jobs scale effectively across prover nodes.
-\textbf{[Insert final concurrent-serving headline result.]}
+reuses expensive setup artifacts across requests. Partitioning already makes
+many proof jobs small, so stage-aware admission is most useful when memory
+capacity becomes the limiting resource. Under a 48~GiB MobileNetV2 proving
+budget, stage-aware admission reduces median request latency by 4.2--8.8\%
+across bursts of 4--16 requests. Partitioned requests also scale effectively
+across prover nodes, reaching \(10.5\)--\(12.7\times\) speedup from one to ten
+nodes across the three primary workloads.
