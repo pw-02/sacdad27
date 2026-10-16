@@ -1,9 +1,16 @@
 \section{Discussion}
 \label{sec:discussion}
 \TITLE{} uses memory as the primary admission resource because memory capacity
-determines whether proof stages can safely overlap on a node. The same
-framework could incorporate CPU estimates when CPU contention dominates. We
-also treat partitioning and runtime scheduling separately. Partitioning defines
+determines whether proof stages can safely overlap on a node. The concurrent
+results also show that stage-aware admission is not intended as a universal
+replacement for whole-job reservation. When partitioning already makes jobs
+small relative to available memory, whole-job admission can expose most of the
+useful concurrency and CPU contention may become the limiting factor. The
+stage-aware mechanism matters when memory pressure makes peak reservation
+restrictive, as in the controlled 48~GiB experiment. The same framework could
+incorporate CPU estimates when CPU contention dominates.
+
+We also treat partitioning and runtime scheduling separately. Partitioning defines
 the proof jobs, while \TITLE{} controls their execution. Finally, the
 coordinator provides request-level fairness rather than explicit deadlines or
 priorities, which could be added as alternative scheduling objectives.
