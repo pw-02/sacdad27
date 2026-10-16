@@ -1,27 +1,16 @@
 \section{Evaluation}
 \label{sec:evaluation}
 
-We evaluate \TITLE{} by asking four questions: how effectively it serves
-concurrent requests, how stage-aware admission compares with whole-job peak
-reservation, whether historical stage profiles are accurate enough for
-online admission, and how much setup reuse reduces repeated work. We also
-measure single-request scale-out and sensitivity to partition granularity.
+We evaluate \TITLE{} by asking four questions: how effectively it serves concurrent requests, how stage-aware admission compares with whole-job peak reservation, whether historical stage profiles are accurate enough for online admission, and how much setup reuse reduces repeated work. We additionally measure single-request scale-out and sensitivity to partition granularity.
 
 \subsection{Experimental Setup}
 \label{sec:eval-setup}
 
 \textbf{Platforms.}
-Single-node experiments run on a dual-socket AMD EPYC 9354 server with
-64 physical cores and 128~GiB of RAM. Multi-node experiments use up to
-10 AWS m6a.4xlarge instances, each with 16 vCPUs and 64~GiB of RAM. One
-prover node also hosts the coordinator, and Amazon S3 is used for artifact
-transfer between the coordinator and prover nodes.
+Single-node experiments run on a dual-socket AMD EPYC 9354 server with 64 physical cores and 128~GiB of RAM. Multi-node experiments use up to 10 AWS m6a.4xlarge instances, each with 16 vCPUs and 64~GiB of RAM. One prover node also hosts the coordinator, and Amazon S3 is used for artifact transfer between the coordinator and prover nodes.
 
 \textbf{Workloads.}
-We evaluate TinyBERT, MobileNetV2, and NanoGPT (4L), summarized in
-Table~\ref{tab:models}. Unless otherwise stated, we use one ONNX operator
-per partition. Section~\ref{sec:eval-sensitivity} evaluates coarser
-partitions.
+We evaluate TinyBERT, MobileNetV2, and NanoGPT (4L), summarized in Table~\ref{tab:models}. These workloads span transformer and convolutional architectures and produce markedly different proof-job sizes and resource demands. Unless otherwise stated, we use one ONNX operator per partition. Section~\ref{sec:eval-sensitivity} evaluates coarser partitions.
 
 \begin{table}[t]
 \centering
@@ -41,20 +30,10 @@ NanoGPT (4L)   & Seq.\ 64              & 4.2  & 181 \\
 \end{table}
 
 \textbf{Policies.}
-We compare three node-level execution policies while holding partitioning
-and coordinator scheduling fixed. \emph{Fixed-$k$} limits each node to
-\(k\) active proof jobs. \emph{Whole-job admission} reserves each job's
-predicted peak memory until completion. \emph{\TITLE{}} instead reserves
-the predicted memory of the stage about to run. Unless otherwise stated,
-fixed concurrency uses \(k=8\).
+We compare three node-level execution policies while holding partitioning and coordinator scheduling fixed. \emph{Fixed-$k$} limits each node to \(k\) active proof jobs. \emph{Whole-job admission} reserves each job's predicted peak memory until completion. \emph{\TITLE{}} instead reserves the predicted memory of the stage about to run. Unless otherwise stated, fixed concurrency uses \(k=8\). The latter two policies use the same historical memory information, differing in the granularity at which it is reserved.
 
 \textbf{Profiles and traffic.}
-Cold runs generate setup artifacts during execution, while warm runs reuse
-artifacts generated beforehand. Historical profiles are collected in
-separate runs under the same setup condition and initialized identically
-across compared policies. Burst experiments submit
-\(N\in\{1,4,8,16\}\) requests simultaneously and report request latency,
-batch makespan, and peak memory.
+Cold runs generate setup artifacts during execution, while warm runs reuse matching artifacts generated beforehand. Historical profiles are collected in separate runs under the same setup condition and initialized identically across compared policies, so evaluation runs do not bootstrap from outcomes observed earlier in the same comparison. Burst experiments submit \(N\in\{1,4,8,16\}\) requests simultaneously and report request latency, batch makespan, and peak memory.
 
 \subsection{Performance Under Concurrent Requests}
 \label{sec:eval-serving}
@@ -62,40 +41,24 @@ batch makespan, and peak memory.
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{figures/sacdad/eval/burst_serving.pdf}
-\caption{End-to-end performance under burst arrivals on a single prover
-node. We submit \(N\) requests simultaneously and compare fixed
-concurrency, whole-job admission, and \TITLE{}'s stage-aware admission.
-Lower is better.}
+\caption{End-to-end performance under burst arrivals on a single prover node. We submit \(N\) requests simultaneously and compare fixed concurrency, whole-job admission, and \TITLE{}'s stage-aware admission. Lower is better.}
 \label{fig:burst-performance}
 \end{figure*}
 
-Figure~\ref{fig:burst-performance} compares the three policies as
-concurrent demand increases on a fixed prover node. At \(N=1\), the
-comparison isolates concurrency among jobs from one request. As \(N\)
-increases, jobs from multiple requests compete for the same machine.
-\zkTBC{Report the final latency and makespan differences, including the
-largest improvement over whole-job admission and where fixed concurrency
-remains competitive.}
+Figure~\ref{fig:burst-performance} compares the three policies as concurrent demand increases on a fixed prover node. At \(N=1\), the comparison isolates concurrency among jobs from one request. As \(N\) increases, jobs from multiple requests compete for the same machine, which is the setting in which conservative reservation can leave useful capacity idle while an aggressive fixed worker count can oversubscribe memory.
 
-\zkTBC{Relate the observed differences to memory overlap, admission waiting,
-and CPU contention, and state the supported conclusion about stage-aware
-admission under increasing concurrent demand.}
+\zkTBC{Report the final latency and makespan differences, including the largest improvement over whole-job admission and where fixed concurrency remains competitive.}
+
+\zkTBC{Relate the observed differences to memory overlap, admission waiting, and CPU contention. In particular, distinguish cases where stage-aware admission exposes useful overlap from cases where CPU saturation becomes the limiting resource, and state the supported conclusion about increasing concurrent demand.}
 
 \subsection{Single-Request Scale-Out}
 \label{sec:eval-scale-out}
 
-We next vary the prover pool from 1 to 10 nodes while holding the request
-and partitioning fixed. Let \(T_p\) denote completion time with \(p\)
-prover nodes and define speedup as \(T_1/T_p\).
-Figure~\ref{fig:scale-out} reports completion time and speedup.
+We next isolate the effect of adding prover nodes to a single inference request. For each workload, the request and partitioning remain fixed while the prover pool grows from 1 to 10 nodes. Let \(T_p\) denote completion time with \(p\) prover nodes and define speedup as \(T_1/T_p\). Figure~\ref{fig:scale-out} reports both completion time and speedup.
 
-All three workloads benefit substantially from additional nodes. NanoGPT
-(4L) decreases from 1108~s to 89~s, MobileNetV2 from 9639~s to 762~s,
-and TinyBERT from 7900~s to 750~s, corresponding to \(12.4\times\),
-\(12.7\times\), and \(10.5\times\) speedups. At 10 nodes, summed job
-runtime per worker varies by only 116.8--118.2~s for NanoGPT and
-557.1--560.1~s for MobileNetV2, indicating effective distribution of the
-same proof workload across workers.
+All three workloads benefit substantially from additional nodes. NanoGPT (4L) decreases from 1108~s to 89~s, MobileNetV2 from 9639~s to 762~s, and TinyBERT from 7900~s to 750~s, corresponding to \(12.4\times\), \(12.7\times\), and \(10.5\times\) speedups. These speedups exceed the node-count increase because the one-node distributed configuration also incurs execution and artifact-handling costs that can overlap once the job set is spread across several workers.
+
+The worker reports show that the scheduler distributes proving work evenly at larger scales. At 10 nodes, summed job runtime per worker varies by only 116.8--118.2~s for NanoGPT and 557.1--560.1~s for MobileNetV2. Aggregate proving work remains nearly unchanged as the node count grows, so the reduction in request time comes primarily from executing the existing job set in parallel rather than from doing less proving work.
 
 \begin{figure}[t]
     \centering
@@ -106,12 +69,9 @@ same proof workload across workers.
 \end{figure}
 
 \textbf{Execution breakdown.}
-Table~\ref{tab:scaleout-overhead} shows that proof generation dominates
-compute time, while shared-storage cost is dominated by reads. Aggregate
-S3 read time remains broadly stable across the 1--10 node runs, ranging
-from 247--274~s for NanoGPT and 798--848~s for MobileNetV2. Increasing
-the prover pool therefore does not substantially increase transfer cost
-for a fixed request over the evaluated range.
+Table~\ref{tab:scaleout-overhead} separates proof execution from shared-storage transfer. Proof generation remains the dominant compute cost, while verification is small by comparison. Shared-storage cost is dominated by reads because prover nodes retrieve request and reusable artifacts, whereas generated outputs are comparatively small.
+
+Aggregate S3 read time also remains broadly stable as the prover pool grows, ranging from 247--274~s for NanoGPT and 798--848~s for MobileNetV2 across the 1--10 node runs. Thus, scaling a fixed request across more prover nodes does not substantially increase its total transfer work over the evaluated range. These aggregate times may overlap in wall-clock execution, so they explain where work is spent rather than summing directly to request latency.
 
 \begin{table}[t]
 \centering
@@ -128,32 +88,23 @@ MobileNetV2  & 4233.1 & 31.8 & 819.9 & 17.5 \\
 NanoGPT (4L) & 746.3  & 7.1  & 264.0 & 20.3 \\
 \bottomrule
 \end{tabular*}
-\caption{Mean aggregate job-level time across the scale-out runs. Times
-sum across jobs and may overlap in wall-clock execution.}
+\caption{Mean aggregate job-level time across the scale-out runs. Times sum across jobs and may overlap in wall-clock execution.}
 \label{tab:scaleout-overhead}
 \end{table}
 
 \subsection{Resource Profile Accuracy}
 \label{sec:profile-accuracy}
 
-\TITLE{} estimates stage memory from recent executions of the same model
-partition. We repeatedly execute representative partitions in isolation
-and compare each observed peak with the estimate available beforehand.
-With fewer than five prior measurements, \TITLE{} uses the largest
-observed peak. Once five are available, it uses the empirical 90th
-percentile of recent history.
+\TITLE{} estimates stage memory from recent executions of the same model partition. We therefore test whether repeated executions are stable enough for those histories to support online admission. The microbenchmark repeatedly executes representative partitions in isolation and records the peak memory of the admission-relevant execution region. Cold runs include the fused setup-and-prove path, while warm runs measure proving after matching setup artifacts are already available.
 
-Figure~\ref{fig:profile-accuracy} shows that median absolute prediction
-error remains below 0.5\% in every measured configuration. Although
-12.5--29.2\% of predictions underestimate the subsequent peak, the
-largest observed shortfall is below 0.08~GiB. Thus, underprediction is
-usually a small deviation around an otherwise stable memory profile.
+For each execution, the prediction is constructed using only earlier observations from the same partition and setup condition. With fewer than five prior measurements, \TITLE{} uses the largest observed peak. Once five are available, it uses the empirical 90th percentile of recent history. Figure~\ref{fig:profile-accuracy} reports both the median absolute prediction error and how often the prediction falls below the subsequently observed peak.
+
+Memory demand is highly repeatable in these measurements. Median absolute prediction error remains below 0.5\% in every measured configuration. Underprediction still occurs in 12.5--29.2\% of cases, but its magnitude is small: the largest observed shortfall is below 0.08~GiB. This distinction matters for admission because an estimator can occasionally fall below the next observation without missing required capacity by a large amount. The live-memory check in Section~\ref{sec:local-admission} provides a second guard against such deviations.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/sacdad/eval/profile_accuracy_conditions.pdf}
-    \caption{Stage-level memory prediction under cold and warm execution.
-    The panels report median absolute error and underprediction frequency.}
+    \caption{Stage-level memory prediction under cold and warm execution. The panels report median absolute error and underprediction frequency.}
     \label{fig:profile-accuracy}
 \end{figure}
 
@@ -161,11 +112,9 @@ usually a small deviation around an otherwise stable memory profile.
 \label{sec:eval-sensitivity}
 
 \textbf{Setup reuse.}
-Table~\ref{tab:setup-reuse} compares first-time generation with reuse from
-the node-local cache. Reuse removes 96.3--98.6\% of aggregate setup time.
-The corresponding proving keys occupy 59.1--287.5~GiB across the three
-workloads, motivating a bounded cache rather than retaining every artifact
-locally.
+Table~\ref{tab:setup-reuse} compares first-time generation with reuse from the node-local cache. Reuse removes 96.3--98.6\% of aggregate setup time across the three workloads. The largest absolute saving occurs for MobileNetV2, whose setup work falls from more than 14{,}600~s to 391~s when matching artifacts are already local.
+
+The savings come with a substantial storage footprint. Proving keys occupy 68.8~GiB for TinyBERT, 287.5~GiB for MobileNetV2, and 59.1~GiB for NanoGPT. Reuse can therefore eliminate most repeated setup work, but retaining every artifact on every node is impractical. This tradeoff motivates the bounded cache and locality-aware placement described in Section~\ref{sec:setup-reuse}.
 
 \begin{table}[t]
 \centering
@@ -186,16 +135,13 @@ NanoGPT (4L)  & 1{,}812.3  & 67.1  & 96.3 & 59.1 \\
 \end{table}
 
 \textbf{Partition granularity.}
-We vary the number of operators grouped into each proof job while holding
-the model and backend fixed. Figure~\ref{fig:partition-granularity} shows
-that coarser partitions increase aggregate prover time and peak job memory
-while exposing fewer independently schedulable jobs. We therefore use one
-operator per proof job in the main serving experiments.
+We vary the number of operators grouped into each proof job while holding the model and backend fixed. Figure~\ref{fig:partition-granularity} shows that coarser partitions increase aggregate prover time and peak job memory while exposing fewer independently schedulable jobs. The effect is especially pronounced for MobileNetV2, where larger groups quickly concentrate both proving work and memory into individual jobs.
+
+We therefore use one operator per proof job in the main serving experiments. This choice is not intended as a claim that operator-level partitioning is universally optimal. Rather, among the configurations evaluated here it exposes the finest scheduling granularity while avoiding the additional proving cost and memory demand introduced by coarser grouping.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/sacdad/eval/partition_granularity.pdf}
-    \caption{Effect of partition granularity on aggregate proving cost and
-    peak job memory.}
+    \caption{Effect of partition granularity on aggregate proving cost and peak job memory.}
     \label{fig:partition-granularity}
 \end{figure}
