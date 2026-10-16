@@ -45,7 +45,7 @@ Cold runs generate setup artifacts during execution, while warm runs reuse match
 \label{fig:burst-performance}
 \end{figure}
 
-Partitioning already makes many proof jobs small, so stage-aware admission does not necessarily improve performance when memory is plentiful. In that regime, whole-job peak reservation can still admit substantial parallelism because many jobs fit in memory at once. We therefore evaluate stage-aware admission under controlled memory pressure, where reserving every job's peak for its full execution is more likely to delay stages whose current memory demand is much smaller.
+As Figure~\ref{fig:partition-benefits} shows, partitioning already reduces the memory footprint of the work presented to the runtime. As a result, many proof jobs are small enough that whole-job peak reservation can still admit substantial parallelism when memory is plentiful. Stage-aware admission therefore does not necessarily improve performance in that regime. We evaluate it under controlled memory pressure, where reserving every job's peak for its full execution is more likely to delay stages whose current memory demand is much smaller.
 
 Figure~\ref{fig:burst-performance} shows MobileNetV2 with the proving budget restricted to 48~GiB. For bursts of 2, 4, 8, and 16 requests, median request latency falls from 21{,}100.7~s to 20{,}088.4~s, from 42{,}057.1~s to 38{,}340.0~s, from 84{,}134.9~s to 78{,}689.0~s, and from 168{,}174.4~s to 161{,}068.5~s. These correspond to improvements of 4.8\%, 8.8\%, 6.5\%, and 4.2\%, respectively.
 
