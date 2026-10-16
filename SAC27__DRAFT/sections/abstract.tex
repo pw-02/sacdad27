@@ -1,29 +1,9 @@
 \providecommand{\zkTBC}[1]{\textbf{[TO COMPLETE: #1]}}
 
 \begin{abstract}
-Zero-knowledge machine learning (zkML) allows a service to return an inference
-result with a cryptographic proof of correct execution, but proof generation
-is slow and memory intensive. Partitioning exposes independently provable jobs
-and can reduce per-job cost, yet concurrent requests must still share finite
-prover resources.
+Zero-knowledge machine learning (zkML) can verify outsourced inference, but proof generation is slow and memory intensive. Partitioning a model into independently provable jobs reduces per-job cost and exposes parallelism, but it does not by itself determine how those jobs should share prover resources when requests execute concurrently.
 
-We characterize partitioned zkML execution and find substantial variation
-across jobs, strongly stage-dependent memory demand, and repeated circuit
-executions that support predictable resource profiles and reusable setup
-artifacts. We present \emph{zkInfer}, a distributed runtime that separates
-cluster-wide job placement from node-local stage admission. The coordinator
-schedules jobs across requests and prover nodes, while each node admits stages
-using historical memory profiles and current local capacity. zkInfer also
-reuses circuit-specific setup artifacts without modifying the underlying
-proving protocol.
+We characterize partitioned zkML execution and find three properties that shape this scheduling problem. Proof jobs differ widely in runtime and peak memory, memory demand changes substantially across proving stages, and repeated executions can reuse expensive circuit-specific setup artifacts. We present \emph{zkInfer}, a distributed runtime that treats partitioned proof generation as a serving workload. A cluster-wide coordinator assigns jobs across requests and prover nodes, while each node performs stage-aware memory admission using recent resource profiles. zkInfer also reuses setup artifacts without changing the underlying proving protocol.
 
-Partitioning already makes many proof jobs small, so stage-aware admission does
-not necessarily improve performance when memory is plentiful. We therefore
-evaluate it under controlled memory pressure. With MobileNetV2 restricted to a
-48~GiB proving budget, stage-aware admission reduces median request latency by
-4.2--8.8\% across bursts of 4--16 requests. Separately, scaling a single
-partitioned request from one to ten prover nodes improves completion time by
-\(10.5\)--\(12.7\times\) across the three primary workloads. These results show
-that stage-aware admission is most useful when memory capacity, rather than the
-number of available proof jobs, limits concurrency.
+Our evaluation shows that stage-aware admission is most useful when memory is the limiting resource. With MobileNetV2 restricted to a 48~GiB proving budget, zkInfer reduces median request latency by 4.2--8.8\% across bursts of 4--16 requests compared with reserving each job's peak memory for its full execution. Separately, scaling a single partitioned request from one to ten prover nodes improves completion time by \(10.5\)--\(12.7\times\) across TinyBERT, MobileNetV2, and NanoGPT. Setup reuse removes 96.3--98.6\% of repeated setup time. These results show that partitioning provides useful units of work, while efficient zkML serving also requires runtime control over where those jobs execute and when they consume scarce memory.
 \end{abstract}
