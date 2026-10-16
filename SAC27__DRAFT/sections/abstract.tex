@@ -4,24 +4,22 @@
 Zero-knowledge machine learning (zkML) allows a service to return an inference
 result with a cryptographic proof of correct execution, but proof generation
 is slow and memory intensive. Partitioning exposes independently provable jobs
-and can reduce per-job cost, but those jobs still have to be scheduled across
-finite prover resources.
+and can reduce per-job cost, yet concurrent requests must still share finite
+prover resources.
 
 We characterize partitioned zkML execution and find substantial variation
 across jobs, strongly stage-dependent memory demand, and repeated circuit
 executions that support predictable resource profiles and reusable setup
-artifacts. We present \emph{zkInfer}, a distributed runtime that treats these
-partitioned jobs as a serving workload. zkInfer separates cluster-wide job
-placement from node-local admission, using historical resource profiles,
-current memory availability, and artifact locality while leaving the
-underlying proving protocol unchanged.
+artifacts. We present \emph{zkInfer}, a distributed runtime that separates
+cluster-wide job placement from node-local stage admission. The coordinator
+schedules jobs across requests and prover nodes, while each node admits stages
+using historical memory profiles and current local capacity. zkInfer also
+reuses circuit-specific setup artifacts without modifying the underlying
+proving protocol.
 
-We evaluate zkInfer across convolutional and transformer workloads. The
-resource profiles used for admission have below 0.5\% median absolute error in
-all measured configurations, and setup reuse removes 96.3--98.6\% of repeated
-setup time. When a single partitioned request is scaled from one to ten prover
-nodes, completion time improves by 10.5--12.7\times across the three primary
-workloads. These results show that partitioning provides useful units of work,
-while scalable zkML execution also depends on how those jobs are placed,
-admitted, and reused across prover resources.
+We evaluate zkInfer across convolutional, generative, and transformer
+workloads under single-node, distributed, and concurrent execution.
+\textbf{[Insert final concurrent-serving and scale-out headline results.]}
+These results show that scalable zkML serving depends not only on proving
+performance, but also on how proof work is scheduled across shared resources.
 \end{abstract}
