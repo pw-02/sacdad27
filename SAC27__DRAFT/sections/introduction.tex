@@ -1,95 +1,24 @@
-
-
 \section{Introduction}
-
 \label{sec:intro}
 
-Machine-learning inference is increasingly outsourced to remote services, as modern models often require more computation, memory, and specialized hardware than clients can practically provision locally~\cite{zhang2024hardware,sheng2023flexgen}. In this setting, the service provider controls model execution, while the client typically observes only the returned prediction. The client therefore has no direct assurance that the specified model was evaluated correctly on the submitted input~\cite{kang2024scaling,qu2025zkgpt}. Verifying the result by independently re-executing the model would undermine the efficiency gains of outsourcing~\cite{kang2024scaling}, while inspecting the provider's execution may require access to proprietary model parameters, intermediate values, or other information that either party wishes to keep confidential. 
+Machine-learning inference is increasingly outsourced to remote services, as modern models often require more computation, memory, and specialized hardware than clients can practically provision locally~\cite{zhang2024hardware,sheng2023flexgen}. In this setting, the client observes the returned prediction but has no direct assurance that the specified model was evaluated correctly on the submitted input~\cite{kang2024scaling,qu2025zkgpt}. Re-executing the model locally would undermine the benefit of outsourcing, while inspecting the service's execution may require access to private inputs, model parameters, or intermediate values.
 
+Zero-knowledge machine learning (zkML) addresses this problem by returning a cryptographic proof alongside the prediction~\cite{chen2024zkml,kang2024scaling,boyuan2021zen,chen2025zktorch}. The proof attests to correct execution without requiring the client to repeat the inference and can keep selected inputs or model values hidden. The resulting asymmetry is useful for verification but places most of the computational burden on the prover. zkML proof generation can be orders of magnitude slower than ordinary inference and consume large amounts of memory. For example, zkGPT~\cite{qu2025zkgpt} reports 147.7~s to prove the generation of 64 tokens compared with 94.55~ms for model execution, with peak prover memory reaching 240.5~GB.
 
-Zero-knowledge machine learning (zkML) addresses this problem by allowing the service provider to return a cryptographic proof alongside the prediction  ~\cite{chen2024zkml,kang2024scaling,boyuan2021zen,chen2025zktorch}. The proof attests that the specified model computation was executed correctly, while the client verifies the result without repeating the inference. Depending on how the computation is encoded, sensitive values such as model parameters and client inputs can remain hidden from the verifier. 
+Prior zkML work primarily reduces the cost of individual proofs through model transformations, optimized circuits, broader framework support, GPU acceleration, parallel proof accumulation, or partitioning~\cite{boyuan2021zen,chen2024zkml,ezkl,sin2024zkllm,chen2025zktorch,sanjaya2026zkcomposer}. These techniques improve proving efficiency and expose parallelism within an inference, but leave a complementary systems problem when multiple inference requests share finite prover resources. Each request may expand into many heterogeneous proof jobs whose runtime and memory demand vary substantially, while repeated executions can reuse expensive circuit-specific artifacts.
 
-Many zkML systems~\cite{chen2024zkml,boyuan2021zen} build on zero-knowledge succinct non-interactive arguments of knowledge (ZK-SNARKs)~\cite{bitansky2012extractable,groth2016size}. ZK-SNARKs provide compact proofs with low verification cost, allowing clients to efficiently validate inference results. Their non-interactive form also allows proofs to be stored and verified later by the client or an independent auditor, without further interaction with the prover. The resulting asymmetry is attractive for verification, but places most of the computational burden on the prover.
-To prove an inference, the model computation is encoded as arithmetic constraints in a proving framework such as Halo2~\cite{halo2}. For each inference, the prover constructs a witness containing the private inputs and intermediate values needed to satisfy these constraints, and then executes the proving protocol over that witness. This process can be orders of magnitude slower than ordinary inference and can consume large amounts of memory. For example, zkGPT~\cite{qu2025zkgpt} reports 147.7 seconds to prove the generation of 64 tokens, compared with 94.55 milliseconds for the corresponding model execution on the same machine, with peak prover memory reaching 240.5~GB. 
-
-
-Furthermore, scalability is limited not only by the cost of generating an individual proof, but also by how proving work is scheduled across concurrent inference requests. Existing zkML systems primarily improve the efficiency and practicality of individual proofs through zk-friendly model transformations and optimized circuit construction~\cite{boyuan2021zen,chen2024zkml}, broader model support through frameworks such as EZKL~\cite{ezkl}, and increasingly through GPU acceleration~\cite{sin2024zkllm}, parallel proof accumulation~\cite{chen2025zktorch}, or decomposition into independently provable partitions~\cite{sanjaya2026zkcomposer}. These techniques reduce prover overhead and expose greater parallelism within individual proofs, but largely leave open the complementary serving problem of coordinating many independent inference requests that contend for finite prover memory and compute resources.
-
-
-As zkML systems move beyond one-off proof generation, they are likely to face the same basic operating condition as conventional inference services, where requests arrive over time and compete for a finite pool of compute and memory. Unlike ordinary inference, however, each request may expand into multiple heterogeneous proof jobs whose resource demands change across proof-construction stages, making concurrent execution a central systems problem.  
-Our characterization in Section\ref{sec:characterization}, across three model families, highlights these challenges. Model partitioning exposes parallel proof jobs and can reduce end-to-end proving time, but the resulting jobs vary substantially in execution time and peak memory demand. Resource usage also changes over the course of proof construction, with later cryptographic stages capable of imposing much higher memory demands than earlier preparation stages. Repeated executions of the same circuit can further reuse expensive setup state, making placement sensitive to where that state is already available.  
-Together, these properties make naive concurrency ineffective. Launching
-too many jobs can oversubscribe memory and cause failures, while reserving
-each job's peak demand for its entire lifetime can leave substantial
-capacity idle. A zkML serving runtime must therefore decide both
-\emph{where} proof jobs execute and \emph{when} resource-intensive
-stages may proceed, while accounting for contention and reusable setup
-artifacts.
+Our characterization in Section~\ref{sec:characterization} shows that these properties make simple concurrency control inefficient. Launching too many jobs can oversubscribe memory, while reserving each job's peak demand for its full execution can leave capacity idle. A zkML serving runtime must therefore decide both where proof jobs execute and when resource-intensive stages may proceed.
 
 \textbf{Our Work.}
-To address this gap, we introduce \TITLE{}, a distributed proof-serving system for zkML inference under concurrent workloads. \TITLE{} partitions the model's computational graph into separately provable components, turning each inference request into a collection of smaller proof jobs. Before proof generation, it computes the intermediate tensor values required at partition boundaries, allowing the resulting jobs to execute independently across prover machines. Cryptographic commitments bind the inputs and outputs of adjacent partitions so that their proofs collectively establish a consistent end-to-end inference. This decomposition exposes parallelism within each request while also creating proof jobs that can be scheduled across concurrent requests.
+We present \TITLE{}, a distributed runtime for concurrent zkML proof serving. \TITLE{} transforms each inference request into independently executable proof jobs and uses a hierarchical resource-management architecture that separates cluster-wide placement from node-local admission. The coordinator balances requests, runtime estimates, node capacity, and setup locality when assigning jobs. Each prover node then admits execution stages using recent stage-level memory profiles and current local capacity, allowing safe overlap without reserving a job's peak memory for its entire lifetime. Reusable compiled circuits and proving keys are cached and reused across requests when available.
 
-To coordinate proof execution, \TITLE{} uses a hierarchical resource-management architecture. A global coordinator assigns each proof job to a prover node, while a local scheduler on that node decides when the job's execution stages can run. Instead of fixing the number of concurrent workers or reserving each job's peak memory for its full lifetime, the local scheduler uses resource profiles from prior executions of the same circuit together with the node's current capacity to admit work dynamically. This allows stages from different requests to overlap when their
-high-demand phases do not coincide, while keeping each proof job on a
-single node throughout execution and avoiding mid-execution migration.
+We implement \TITLE{} around existing zkML backends, using EZKL~\cite{ezkl} as the primary backend and Halo2~\cite{halo2} as the underlying proof system. The proving protocol remains unchanged. We instrument the backend to expose execution stages and resource usage for characterization and admission decisions.
 
+We evaluate \TITLE{} across convolutional, generative, and transformer workloads, including single-node, distributed, and concurrent execution. \textbf{[Add final concurrent-serving and scale-out headline results here once finalized.]}
 
-
-\TITLE{} also exploits the repeated structure of ML inference. Compiled circuits, proving keys, and other setup artifacts can be reused across executions of the same circuit. Because these artifacts are expensive to generate and may also be costly to transfer between machines, the global coordinator considers both resource feasibility and whether the required state is already present on a candidate node. Previously unseen circuits can still execute from a cold start, while recurring workloads benefit from cached proving state and resource profiles learned from prior executions.Compiled circuits, proving keys, and other setup artifacts can be reused
-
-We implement \TITLE{} as a proof-serving layer around existing zkML
-backends, with EZKL~\cite{ezkl} as the primary backend and Halo2~\cite{halo2} as the
-underlying proof system. The prototype includes the global coordinator,
-node-local resource managers, isolated prover processes, and reusable
-artifact storage, while leaving the underlying proving protocol
-unchanged. We additionally instrument EZKL and Halo2 to expose execution
-stages and resource usage for characterization and online admission
-decisions.
-
-We evaluate \TITLE{} across convolutional, generative, and transformer
-workloads, first isolating the effect of decomposition and then measuring
-parallel, distributed, and concurrent execution. On a single worker,
-partitioned execution reduces end-to-end proving latency by up to
-\(5.6\times\) relative to monolithic proving. Distributing the resulting
-proof jobs across multiple prover nodes further reduces latency by up to
-\(69\times\) and lowers peak per-machine memory by up to \(48\times\).
-\textbf{[Add concurrent-serving result here once finalized.]}
-
-Taken together, these results show that decomposition alone does not
-resolve the systems challenges of scalable zkML proving. Once an
-inference is expressed as a collection of independently executable proof
-jobs, the runtime must manage differences in job cost, changing resource
-demand, reusable proving state, and contention across concurrent
-requests. \TITLE{} addresses these concerns jointly by treating
-partitioned proof generation as a distributed serving problem rather than
-only as a source of parallelism within an individual inference.
-
-\textbf{Contributions.} This paper makes the following contributions:
-
+\textbf{Contributions.} This paper makes three contributions:
 \begin{itemize}
-   \item We characterize partitioned zkML inference as a proof-serving
-workload. Across convolutional, generative, and transformer models,
-we show that proof jobs differ substantially in runtime and memory
-demand, that resource usage changes over the lifetime of a job, and
-that repeated executions exhibit predictable resource behavior while
-allowing expensive setup artifacts to be reused.
-
-    \item We design and implement \TITLE{}, a distributed proof-serving
-    runtime for concurrent zkML inference. \TITLE{} separates
-    cluster-wide job placement from node-local resource admission,
-    using historical execution profiles, current machine capacity, and
-    reusable proving state to decide where proof jobs should run and when
-    resource-intensive stages may proceed.
-
-    \item We evaluate \TITLE{} across multiple model families and
-    deployment scales. Partitioned execution reduces end-to-end proving
-    latency by up to \(5.6\times\) on a single worker, while distributed
-    execution achieves up to \(69\times\) lower latency than monolithic
-    proving and reduces peak per-machine memory by up to \(48\times\).
-    \textbf{[Add final concurrent-serving result here once available.]}
+    \item We characterize partitioned zkML inference as a serving workload, showing substantial variation across proof jobs, stage-dependent memory demand, predictable repeated executions, and opportunities for setup reuse.
+    \item We design and implement \TITLE{}, which separates cluster-wide job placement from node-local stage admission and incorporates historical resource profiles and artifact locality.
+    \item We evaluate \TITLE{} across multiple model families and deployment scales, including concurrent request serving and distributed scale-out. \textbf{[Insert final headline results.]}
 \end{itemize}
-
-
-
-
-
