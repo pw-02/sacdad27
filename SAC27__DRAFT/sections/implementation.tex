@@ -6,6 +6,12 @@ backend, with Halo2 providing the underlying proof system. We instrument the
 EZKL/Halo2 integration to expose proving stages and record the resource
 measurements used for admission and evaluation.
 
+Each proof job executes in an isolated subprocess, which lets the node
+supervisor attribute resident memory to individual jobs and contain worker
+failures. Admission is enforced at the instrumented backend boundaries before
+a controlled stage begins, and completed stage measurements are retained for
+subsequent resource predictions.
+
 Colocated deployments store artifacts on the local filesystem. Distributed
 deployments use Amazon S3~\cite{aws-s3} as shared storage, with each prover
 node maintaining a bounded local cache of reusable setup artifacts.
