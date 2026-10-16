@@ -4,148 +4,82 @@
 \subsection{System Overview}
 \label{sec:system-overview}
 
-Building on Section~\ref{sec:characterization}, we design \TITLE{} as a
-distributed runtime for serving zkML proofs under concurrent requests. A
-request consists of a model and inference input. \TITLE{} applies the
-configured partitioning policy, materializes the corresponding
-per-partition inputs, and creates proof jobs that can execute across a pool
-of prover nodes. The underlying proving protocol and proof-composition
-mechanism remain unchanged.
+Building on Section~\ref{sec:characterization}, we design \TITLE{} as a distributed runtime for serving zkML proofs under concurrent requests. A request consists of a model and inference input. \TITLE{} applies the configured partitioning policy, materializes the corresponding per-partition inputs, and creates proof jobs that can execute across a pool of prover nodes. The underlying proving protocol and proof-composition mechanism remain unchanged.
 
-Figure~\ref{fig:architecture} shows the architecture. The coordinator
-maintains jobs from all active requests and assigns whole jobs to prover
-nodes. Each node then controls when the assigned job's proving stages may
-run. This separation is central to the design: the coordinator handles
-request-level fairness, coarse placement, and setup locality, while the
-node supervisor uses current local memory and stage-level estimates for
-fine-grained admission.
+Figure~\ref{fig:architecture} shows the architecture. The coordinator maintains jobs from all active requests and assigns whole jobs to prover nodes. Each node then controls when the assigned job's proving stages may run. This separation is central to the design. The coordinator reasons about request fairness, job cost, node capacity, and setup locality at the granularity of complete jobs, while the node supervisor uses current local memory and stage-level estimates for fine-grained admission. Keeping short-lived stage decisions local avoids requiring the coordinator to track every memory transition across the cluster.
 
 \subsection{Partitioning and Self-Contained Proof Jobs}
 \label{sec:self-contained-proving-jobs}
 
-During request preparation, \TITLE{} partitions the model graph according
-to a system-wide policy. Unless otherwise stated, we use one graph operator
-per proof job. Section~\ref{sec:eval-sensitivity} evaluates coarser
-partitions.
+During request preparation, \TITLE{} partitions the model graph according to a system-wide policy. Unless otherwise stated, we use one graph operator per proof job. This exposes the largest number of independently schedulable jobs and keeps the computation assigned to each job small. We do not assume that this granularity is optimal for every workload; Section~\ref{sec:eval-sensitivity} evaluates coarser partitions.
 
-A partition may consume tensors produced elsewhere in the graph. \TITLE{}
-therefore executes the model once before distributed proving to materialize
-values that cross partition boundaries and attaches them to the consuming
-jobs as witness inputs. Each job can then be scheduled independently of the
-execution order of other jobs. Correctness does not rely on trusting these
-values directly. Each partition is proved separately, while the backend's
-existing proof-composition mechanism binds values produced by upstream
-partitions to those consumed downstream~\cite{ezkl-splitting}.
+Partitioning alone does not make a job executable because a partition may consume tensors produced elsewhere in the graph. \TITLE{} therefore executes the model once before distributed proving to materialize values that cross partition boundaries and attaches them to the consuming jobs as witness inputs. Each job can then construct its witness and execute independently of the runtime order of other jobs.
+
+This preliminary execution is used only to obtain request-specific values required by the partitioned witnesses. Correctness does not rely on trusting those values directly. Each partition is proved separately, while the backend's existing proof-composition mechanism binds values produced by upstream partitions to those consumed downstream~\cite{ezkl-splitting}. \TITLE{} reuses this mechanism unchanged.
 
 \subsection{Cluster-Wide Job Placement}
 \label{sec:global-placement}
 
-The coordinator first chooses a request using round-robin fairness, then
-selects a job from that request. Requests with no eligible job for the
-polling node are skipped for that poll, and a request moves to the back of
-the queue after an assignment if work remains. This prevents a large
-request from monopolizing newly available prover capacity without requiring
-preemption.
+When several requests are active, the coordinator must avoid allowing one large request to consume every newly available slot while still starting expensive jobs early and exploiting reusable setup already present on a node. \TITLE{} handles these concerns hierarchically instead of combining them into a single weighted score.
 
-Let \(\widehat{m}^{\max}_j\) and \(\widehat{d}_j\) denote the predicted
-maximum memory demand and duration of job \(j\). A job is ineligible for a
-node if its known peak exceeds that node's physical memory. The coordinator
-does not require the whole-job peak to fit within currently free memory,
-because later memory-intensive stages may wait locally. Among eligible jobs
-of the selected request, it first prefers jobs whose reusable setup
-artifacts are already cached on the polling node, then selects the job with
-the largest predicted duration, using submission order to break ties.
+\textbf{Request-level fairness.}
+The coordinator maintains active requests in arrival order. When a node polls for work, the scheduler selects the first request with at least one eligible job for that node. After one assignment, the request moves to the back of the queue if work remains. Requests with no eligible job are skipped for that poll. This gives active requests repeated opportunities to make progress without preempting already running work.
 
-Stage-level packing remains local to each node. Keeping short-lived memory
-conditions out of the coordinator avoids duplicating admission logic and
-lets the node make decisions using the freshest view of its own usage.
+Fairness is applied at the request level rather than by equalizing job counts. Section~\ref{sec:job-heterogeneity} shows why this distinction matters: one proof job can represent far more runtime or memory than another. The coordinator therefore chooses among jobs only after selecting the request whose turn it is.
+
+\textbf{Eligibility and ordering.}
+Let \(\widehat{m}^{\max}_j\) and \(\widehat{d}_j\) denote the predicted maximum memory demand and duration of job \(j\). A job is ineligible for a node if its known peak exceeds that node's physical memory. The coordinator does not require the whole-job peak to fit within currently free memory because a later memory-intensive stage may wait locally until capacity becomes available. It only avoids dispatching known memory-consuming work when a node reports no usable memory.
+
+Among eligible jobs of the selected request, the coordinator first prefers jobs whose reusable setup artifacts are already cached on the polling node. Within the same locality class it selects the job with the largest predicted duration, using submission order to break remaining ties. Locality avoids unnecessary setup restoration, while starting long jobs early reduces the chance that a single expensive partition determines the request tail.
+
+Stage-level packing remains local to each node. A coordinator could instead place only jobs whose next stage fits current free memory, but that would duplicate admission logic and make global decisions depend on short-lived local conditions. \TITLE{} therefore uses coarse feasibility globally and leaves fine-grained memory decisions to the node with the freshest view of its own usage.
 
 \subsection{Node-Local Resource Admission}
 \label{sec:local-admission}
 
-Once a proof job is assigned to a node, the node supervisor controls memory
-admission. Instead of reserving the job's predicted peak for its entire
-execution, the supervisor admits each controllable stage according to that
-stage's predicted demand and current local capacity.
+Once a proof job is assigned to a node, the node supervisor controls memory admission. Instead of reserving the job's predicted peak for its entire execution, the supervisor admits each controllable stage according to that stage's predicted demand and current local capacity. A job remains pinned to the same node for an execution attempt; stage admission controls when it proceeds rather than migrating it between machines.
 
 \textbf{Stage-level estimates.}
-For each model partition and proving configuration, the supervisor records
-recent peak memory observations separately for each stage. With fewer than
-five observations, \TITLE{} uses the largest observed value. Once at least
-five are available, it uses the empirical 90th percentile of recent
-history. If no stage-specific history exists, the controller falls back to
-the job's whole-job estimate. Section~\ref{sec:profile-accuracy} evaluates
-these predictions. Admission is memory-based because memory capacity
-determines whether multiple proof stages can execute safely on the same
-node.
+For each model partition and proving configuration, the supervisor records recent peak memory observations separately for each stage. Starting with two prior observations, \TITLE{} uses the largest observed value while fewer than five observations are available. Once at least five are available, it uses the empirical 90th percentile of recent history, limiting the long-term effect of an isolated maximum while retaining headroom for variation. If no stage-specific history exists, the controller falls back to the job's whole-job estimate. Section~\ref{sec:profile-accuracy} evaluates these predictions. Admission is memory-based because memory capacity determines whether multiple proof stages can execute safely on the same node.
 
-Admission is enforced only at backend boundaries where execution can be
-delayed without interrupting an operation already in progress. EZKL already
-exposes major operations such as witness generation, setup, and proof
-generation. We additionally instrument setup to distinguish parameter
-loading, verification-key generation, and proving-key generation so that
-resource demand can be measured at finer granularity.
+Admission is enforced only at backend boundaries where execution can be delayed without interrupting an operation already in progress. EZKL already exposes major operations such as witness generation, setup, and proof generation. We additionally instrument setup to distinguish parameter loading, verification-key generation, and proving-key generation. These finer-grained measurements are used to build stage profiles even where the backend executes several setup operations within one higher-level call.
 
 \textbf{Reservation and live-memory checks.}
-Let \(T_h\) be the physical memory of node \(h\), \(R_h\) a fixed system
-reserve, and \(B_h=T_h-R_h\) the budget available to proving work. Before
-stage \(s\) of job \(j\) begins, the supervisor obtains a predicted peak
-\(\widehat{m}_{j,s}\). If \(A_h\) is the set of admitted stages, admission
-requires
+Let \(T_h\) be the physical memory of node \(h\), \(R_h\) a fixed system reserve, and \(B_h=T_h-R_h\) the budget available to proving work. Before stage \(s\) of job \(j\) begins, the supervisor obtains a predicted peak \(\widehat{m}_{j,s}\). If \(A_h\) is the set of admitted stages, admission requires
 \begin{equation}
     \sum_{i\in A_h}\widehat{m}_i+\widehat{m}_{j,s}\leq B_h.
     \label{eq:stage-reservation}
 \end{equation}
+Unlike whole-job reservation, the value charged for a job changes at controlled stage boundaries. Several low-memory stages may therefore overlap even when the eventual peaks of their jobs could not.
 
-The supervisor also checks live available memory to account for memory
-already resident in prover processes. Let \(r_i\) be the current resident
-memory of an admitted process and \(F_h\) the operating system's available
-memory after the reserve. The remaining protected growth is
+Reservation accounting alone is insufficient because prover processes may already hold part of the memory represented by their predictions. \TITLE{} therefore also checks live available memory. Let \(r_i\) be the current resident memory of an admitted process and \(F_h\) the operating system's available memory after the reserve. The remaining protected growth is
 \begin{equation}
     U_h=\sum_{i\in A_h}\max(0,\widehat{m}_i-r_i).
     \label{eq:unconsumed-reservations}
 \end{equation}
-For candidate stage \((j,s)\), let
-\(g_{j,s}=\max(0,\widehat{m}_{j,s}-r_j)\). Admission additionally requires
+For candidate stage \((j,s)\), let \(g_{j,s}=\max(0,\widehat{m}_{j,s}-r_j)\). Admission additionally requires
 \begin{equation}
     U_h+g_{j,s}\leq F_h.
     \label{eq:stage-live-memory}
 \end{equation}
-This avoids charging resident memory twice while preserving headroom for
-expected growth.
+This avoids charging memory that is already resident twice while still protecting the headroom that admitted stages are expected to consume later.
 
-Once admitted, a stage runs to completion without preemption. Its
-reservation is released when the stage finishes, and the job must obtain a
-new reservation before entering the next controlled stage. If memory is
-insufficient, the job waits on the same node. A temporary startup
-reservation covers the interval between leasing a job and its first normal
-stage reservation.
+Once admitted, a stage runs to completion without preemption. Its reservation is released when the stage finishes, and the job must obtain a new reservation before entering the next controlled stage. If memory is insufficient, the job waits on the same node. There is also a short interval between a job lease and its first stage reservation during which the prover process may already consume memory. The supervisor covers this interval with a temporary startup reservation, which is removed once normal stage admission begins.
 
 \subsection{Reusable Setup Artifacts}
 \label{sec:setup-reuse}
 
-\TITLE{} persists reusable artifacts such as compiled circuits and proving
-keys after their first generation. Each node maintains a bounded local
-cache. A local hit avoids setup generation and restoration. If the artifact
-exists only in shared storage, the node restores it locally. Otherwise it
-is generated and persisted for later requests. During a cold execution,
-\TITLE{} keeps newly generated proving material in memory across setup and
-proving to avoid an unnecessary serialize-and-reload cycle.
+\TITLE{} persists reusable artifacts such as compiled circuits and proving keys after their first generation. Each node maintains a bounded local cache. When a job is assigned, the runtime first checks for the required setup locally. A local hit avoids both setup generation and restoration. If the artifact exists only in shared storage, the node restores it into the local cache. Otherwise it is generated locally and persisted for later requests. During a cold execution, \TITLE{} keeps newly generated proving material in memory across setup and proving to avoid an unnecessary serialize-and-reload cycle before persistence.
 
-Setup locality is a secondary placement objective. It is considered only
-after request selection and resource feasibility, so a cache hit does not
-override fairness or memory safety. When the cache exceeds its configured
-limit, inactive artifacts are evicted in recency order. Artifacts used by
-active jobs remain pinned until those jobs finish.
+Setup locality is a secondary placement objective. It is considered only after request selection and resource feasibility, so a cache hit does not override fairness or memory safety. This ordering is important because Section~\ref{sec:eval-sensitivity} shows that proving keys can collectively occupy tens or hundreds of GiB per model, making it impractical to retain every artifact on every prover.
+
+Each node therefore configures a maximum local cache size. When an insertion would exceed that limit, inactive artifacts are evicted in recency order until sufficient space is available. Artifacts used by active jobs are pinned and are not eligible for eviction until those jobs release them. An evicted artifact can later be restored from shared storage or regenerated, so cache contents affect performance rather than correctness.
 
 \subsection{Leases, Failures, and Recovery}
 \label{sec:fault-tolerance}
 
-Proof jobs are also the unit of recovery. Each execution attempt receives a
-unique lease identifier. If a prover fails or a node stops responding, the
-coordinator returns that job to the pending queue while leaving completed
-jobs unchanged. Completion is accepted only when the reported lease matches
-the job's current lease, so late results from an earlier attempt are ignored.
-Heartbeats detect unavailable nodes, failed attempts are retried up to a
-configured limit, and optional coordinator persistence restores completed
-jobs while requeueing work that was running at restart.
+Proof jobs are also the unit of recovery. Each assignment is one execution attempt and receives a unique lease identifier. If a prover reports failure or a node stops responding, the coordinator marks that attempt failed and returns the job to the pending queue. Completed jobs from the same inference request remain unchanged, so only interrupted work is repeated.
+
+Workers include the lease identifier when reporting completion. A result is accepted only if it matches the job's current lease. This prevents a delayed worker from committing a stale result after the coordinator has already reassigned the job. Heartbeats detect unavailable nodes, failed attempts are retried up to a configured limit, and artifacts from separate attempts remain isolated.
+
+\TITLE{} also supports optional coordinator persistence. When enabled, request and job progress is stored durably across coordinator restarts. Completed jobs remain complete, while work that was running is returned to the pending queue and receives a new lease when scheduled again.

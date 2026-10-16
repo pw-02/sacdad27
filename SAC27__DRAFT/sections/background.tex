@@ -4,15 +4,15 @@
 \subsection{zkML Workflow and Proving Pipeline}
 \label{sec:zkml-pipeline}
 
-As shown in Figure~\ref{fig:zkml-workflow}, a client submits an input \(x\) to a model provider, which evaluates a model with parameters \(\theta\) to produce \(y=f(x,\theta)\). The provider returns \(y\) together with a ZK-SNARK proof \(\pi\) attesting that the specified computation produced that output. Which values are public or private depends on the application.
+As shown in Figure~\ref{fig:zkml-workflow}, a client submits an input \(x\) to a remote service, which evaluates a model with parameters \(\theta\) to produce \(y=f(x,\theta)\). The service returns \(y\) together with a ZK-SNARK proof \(\pi\) attesting that the specified computation produced that output. Which values are public or private depends on the application.
 
 To generate \(\pi\), the model is mapped to a proof-compatible representation, often using quantized integer or fixed-point arithmetic~\cite{boyuan2021zen,chen2024zkml}, and compiled into an arithmetic circuit or constraint system~\cite{gabizon2019plonk}. Circuit-specific proving and verification keys can be prepared ahead of time or generated on demand and reused across requests that share the same circuit configuration. For each request, the prover constructs the \emph{witness}, containing the private values required to satisfy the circuit constraints, and generates \(\pi\). The client verifies the proof using the verification key without re-executing the inference.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{figures/background/zkInfer_workflow.pdf}
-    \caption{zkML inference and verification workflow. The model provider returns an output $y$ and a proof $\pi$ attesting that $y$ was produced by evaluating the claimed model on input $x$.}
-    \Description{Diagram showing a client sending an input to a machine-learning service provider. The provider evaluates a model, generates a zero-knowledge proof of correct inference, and returns the output and proof to the client, which verifies the proof.}
+    \caption{zkML inference and verification workflow. The remote service returns an output $y$ and a proof $\pi$ attesting that $y$ was produced by evaluating the claimed model on input $x$.}
+    \Description{Diagram showing a client sending an input to a remote machine-learning service. The service evaluates a model, generates a zero-knowledge proof of correct inference, and returns the output and proof to the client, which verifies the proof.}
     \label{fig:zkml-workflow}
 \end{figure}
 
