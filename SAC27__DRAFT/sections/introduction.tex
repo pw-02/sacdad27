@@ -14,7 +14,7 @@ We present \TITLE{}, a distributed runtime for concurrent zkML proof serving. \T
 
 We implement \TITLE{} around EZKL~\cite{ezkl}, with Halo2~\cite{halo2} as the underlying proof system. The proving protocol remains unchanged. We instrument the backend to expose execution stages and resource usage for characterization and admission decisions.
 
-We evaluate \TITLE{} across convolutional and transformer workloads, including concurrent execution and distributed scale-out. To isolate when stage-aware admission matters, we evaluate it under controlled memory pressure. With MobileNetV2 restricted to a 48~GiB proving budget, stage-aware admission reduces median request latency by 4.2--8.8\% across bursts of 4--16 requests. Separately, scaling a single partitioned request from one to ten prover nodes improves completion time by \(10.5\)--\(12.7\times\) across the three primary workloads.
+We evaluate \TITLE{} across convolutional and transformer workloads, including concurrent execution and distributed scale-out. To isolate when stage-aware admission matters, we evaluate it under controlled memory pressure. With MobileNetV2 restricted to a 48~GiB proving budget, stage-aware admission reduces median request latency by 4.2--8.8\% across bursts of 2--16 requests. Separately, scaling a single partitioned request from one to ten prover nodes improves completion time by \(10.5\)--\(12.7\times\) across the three primary workloads.
 
 \textbf{Contributions.} This paper makes three contributions:
 \begin{itemize}
