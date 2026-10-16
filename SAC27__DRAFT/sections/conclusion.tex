@@ -7,7 +7,7 @@ replacement for whole-job reservation. When partitioning already makes jobs
 small relative to available memory, whole-job admission can expose most of the
 useful concurrency and CPU contention may become the limiting factor. The
 stage-aware mechanism matters when memory pressure makes peak reservation
-restrictive, as in the controlled 48~GiB experiment. The same framework could
+restrictive, as in the controlled 48~GiB proving-budget experiment. The same framework could
 incorporate CPU estimates when CPU contention dominates.
 
 We also treat partitioning and runtime scheduling separately. Partitioning defines
@@ -25,4 +25,5 @@ capacity becomes the limiting resource. Under a 48~GiB MobileNetV2 proving
 budget, stage-aware admission reduces median request latency by 4.2--8.8\%
 across bursts of 2--16 requests. Partitioned requests also scale effectively
 across prover nodes, reaching \(10.5\)--\(12.7\times\) speedup from one to ten
-nodes across the three primary workloads.
+nodes across the three primary workloads. Reusing matching setup artifacts
+removes 96.3--98.6\% of repeated setup time.
