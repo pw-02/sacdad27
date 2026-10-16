@@ -88,6 +88,13 @@ The high-memory portion is also short-lived. The representative TinyBERT, Mobile
 \textbf{Implication.}
 Whole-job peak reservation is a conservative basis for local admission. A runtime can expose additional concurrency by allowing low-memory stages to overlap and delaying only the stages whose predicted demand would exceed available capacity. This observation motivates the stage-aware controller in Section~\ref{sec:local-admission}; Section~\ref{sec:profile-accuracy} evaluates whether recent executions predict those stage demands accurately enough for online use.
 
+\subsection{Reusable Setup Artifacts}
+\label{sec:characterization-reuse}
+Repeated requests that use the same circuit configuration can reuse compiled circuits and proving keys rather than regenerate them for every inference. This creates a second placement consideration alongside memory feasibility because reuse is most valuable when the required artifacts are already local to a prover node. Section~\ref{sec:eval-sensitivity} quantifies both the time saved by reuse and the storage footprint of these artifacts.
+
+\textbf{Implication.}
+Artifact locality is useful for placement, but it should remain secondary to request fairness and memory safety.
+
 \begin{figure*}[t]
     \centering
     \includegraphics[width=\textwidth]{figures/sacdad/architecture.pdf}
