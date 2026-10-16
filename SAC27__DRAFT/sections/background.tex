@@ -15,14 +15,6 @@ To generate \(\pi\), the model is mapped to a proof-compatible representation, o
     \Description{Diagram showing a client sending an input to a remote machine-learning service. The service evaluates a model, generates a zero-knowledge proof of correct inference, and returns the output and proof to the client, which verifies the proof.}
     \label{fig:zkml-workflow}
 \end{figure}
-
-\subsection{Proof Generation as a Systems Bottleneck}
-\label{sec:proving-bottleneck}
-
-zkML proving is substantially more expensive than ordinary model execution because the prover must demonstrate that an arithmetic constraint system is satisfied. Operations such as fixed-point arithmetic, nonlinearities, comparisons, and range checks may introduce additional constraints or lookup arguments~\cite{chen2024zkml,kang2024scaling,liu2021zkcnn}. Proof generation also materializes witness, circuit, proving-key, and polynomial data that can make the working set much larger than the model's inference activations.
-
-These costs create systems-level constraints. Long proof times increase request latency, while large working sets restrict both the size of proof jobs that can execute on a machine and the number that can overlap safely. The problem becomes more pronounced in a serving setting, where multiple inference requests compete for finite compute and memory.
-
 \begin{figure}[t]
 \centering
 \scriptsize
@@ -54,6 +46,14 @@ node distance=0.55cm and 0.75cm
 \caption{Example inference graph partitioned into four proof jobs. Intermediate tensors \(t_1\), \(t_2\), and \(t_3\) cross job boundaries and define the interfaces between jobs.}
 \label{fig:prover-job-graph}
 \end{figure}
+\subsection{Proof Generation as a Systems Bottleneck}
+\label{sec:proving-bottleneck}
+
+zkML proving is substantially more expensive than ordinary model execution because the prover must demonstrate that an arithmetic constraint system is satisfied. Operations such as fixed-point arithmetic, nonlinearities, comparisons, and range checks may introduce additional constraints or lookup arguments~\cite{chen2024zkml,kang2024scaling,liu2021zkcnn}. Proof generation also materializes witness, circuit, proving-key, and polynomial data that can make the working set much larger than the model's inference activations.
+
+These costs create systems-level constraints. Long proof times increase request latency, while large working sets restrict both the size of proof jobs that can execute on a machine and the number that can overlap safely. The problem becomes more pronounced in a serving setting, where multiple inference requests compete for finite compute and memory.
+
+
 
 \subsection{Model Computation as a Graph}
 \label{sec:model-graph}
