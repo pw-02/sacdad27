@@ -33,7 +33,7 @@ NanoGPT (4L)   & Seq.\ 64              & 4.2  & 181 \\
 We compare two node-level admission policies while holding partitioning and coordinator scheduling fixed. \emph{Whole-job admission} reserves each job's predicted peak memory until completion. \emph{\TITLE{}} instead reserves the predicted memory of the stage about to run. Both policies use the same historical memory information, differing in the granularity at which it is reserved. This isolates the benefit of exploiting stage-varying memory demand from differences in prediction or placement.
 
 \textbf{Profiles and traffic.}
-Cold runs generate setup artifacts during execution, while warm runs reuse matching artifacts generated beforehand. Historical profiles are collected in separate runs under the same setup condition and initialized identically across compared policies, so evaluation runs do not bootstrap from outcomes observed earlier in the same comparison. Burst experiments submit \(N\in\{1,4,8,16\}\) requests simultaneously and report request latency, batch makespan, and peak memory.
+Cold runs generate setup artifacts during execution, while warm runs reuse matching artifacts generated beforehand. Historical profiles are collected in separate runs under the same setup condition and initialized identically across compared policies, so evaluation runs do not bootstrap from outcomes observed earlier in the same comparison. Burst experiments submit concurrent requests and report request latency and batch makespan. Because fine-grained partitioning already makes many jobs small, we also evaluate MobileNetV2 with the proving budget restricted to 48~GiB to create a controlled memory-constrained regime.
 
 \subsection{Performance Under Concurrent Requests}
 \label{sec:eval-serving}
@@ -41,15 +41,15 @@ Cold runs generate setup artifacts during execution, while warm runs reuse match
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.95\linewidth]{figures/sacdad/eval/burst_serving.pdf}
-\caption{End-to-end performance under burst arrivals on a single prover node. We submit \(N\) requests simultaneously and compare whole-job admission with \TITLE{}'s stage-aware admission. Lower is better.}
+\caption{MobileNetV2 burst serving with a 48~GiB proving budget. We compare whole-job peak reservation with \TITLE{}'s stage-aware admission. Lower is better.}
 \label{fig:burst-performance}
 \end{figure*}
 
-Figure~\ref{fig:burst-performance} compares the two admission policies as concurrent demand increases on a fixed prover node. At \(N=1\), the comparison isolates concurrency among jobs from one request. As \(N\) increases, jobs from multiple requests compete for the same machine, making conservative peak reservation increasingly likely to leave otherwise usable memory idle.
+Partitioning already makes many proof jobs small, so stage-aware admission does not necessarily improve performance when memory is plentiful. In that regime, whole-job peak reservation can still admit substantial parallelism because many jobs fit in memory at once. We therefore evaluate stage-aware admission under controlled memory pressure, where reserving every job's peak for its full execution is more likely to delay stages whose current memory demand is much smaller.
 
-\zkTBC{Report the final latency and makespan differences, including the largest improvement over whole-job admission.}
+Figure~\ref{fig:burst-performance} shows MobileNetV2 with the proving budget restricted to 48~GiB. Across bursts of 4, 8, and 16 requests, median request latency falls from 42{,}057.1~s to 38{,}340.0~s, from 84{,}134.9~s to 78{,}689.0~s, and from 168{,}174.4~s to 161{,}068.5~s. These correspond to improvements of 8.8\%, 6.5\%, and 4.2\%, respectively. Batch makespan improves by 3.2\% for burst 4 and 4.3\% for burst 16, while the two policies are effectively unchanged at burst 8.
 
-\zkTBC{Relate the observed differences to memory overlap, admission waiting, and CPU contention. Distinguish cases where stage-aware admission exposes useful overlap from cases where CPU saturation becomes the limiting resource, and state the supported conclusion about increasing concurrent demand.}
+These results show that stage-aware admission is most useful when memory capacity is the binding resource. When partitioned jobs already fit comfortably within the available budget, whole-job reservation leaves little additional concurrency for stage-aware admission to expose. Under tighter memory pressure, stage-level admission can overlap low-memory work that whole-job reservation would otherwise delay.
 
 \subsection{Single-Request Scale-Out}
 \label{sec:eval-scale-out}
