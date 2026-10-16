@@ -17,9 +17,13 @@ using historical memory profiles and current local capacity. zkInfer also
 reuses circuit-specific setup artifacts without modifying the underlying
 proving protocol.
 
-We evaluate zkInfer across convolutional, generative, and transformer
-workloads under single-node, distributed, and concurrent execution.
-\textbf{[Insert final concurrent-serving and scale-out headline results.]}
-These results show that scalable zkML serving depends not only on proving
-performance, but also on how proof work is scheduled across shared resources.
+Partitioning already makes many proof jobs small, so stage-aware admission does
+not necessarily improve performance when memory is plentiful. We therefore
+evaluate it under controlled memory pressure. With MobileNetV2 restricted to a
+48~GiB proving budget, stage-aware admission reduces median request latency by
+4.2--8.8\% across bursts of 4--16 requests. Separately, scaling a single
+partitioned request from one to ten prover nodes improves completion time by
+\(10.5\)--\(12.7\times\) across the three primary workloads. These results show
+that stage-aware admission is most useful when memory capacity, rather than the
+number of available proof jobs, limits concurrency.
 \end{abstract}
