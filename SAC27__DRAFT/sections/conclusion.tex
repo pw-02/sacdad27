@@ -1,18 +1,28 @@
 \section{Discussion}
 \label{sec:discussion}
 \TITLE{} uses memory as the primary admission resource because memory capacity
-determines whether proof stages can safely overlap on a node. The same
-framework could incorporate CPU estimates when CPU contention dominates. We
-also treat partitioning and runtime scheduling separately: partitioning defines
-the proof jobs, while \TITLE{} controls their execution. Finally, the
-coordinator provides request-level fairness rather than explicit deadlines or
-priorities, which could be added as alternative scheduling objectives.
+determines whether proof stages can safely overlap on a node. The benefit of
+stage-aware admission depends on whether whole-job peaks are actually
+constraining. Fine-grained partitioning can make many proof jobs small enough
+that whole-job admission already permits substantial overlap. Stage-aware
+admission is therefore most relevant when several larger jobs contend for a
+tighter memory budget, while CPU contention may become the limiting resource
+once memory pressure is relaxed. The same framework could incorporate CPU
+estimates when that contention dominates.
+
+We treat partitioning and runtime scheduling separately. Partitioning defines
+the proof jobs, while \TITLE{} controls their execution. The coordinator
+provides request-level fairness rather than explicit deadlines or priorities,
+which could be added as alternative scheduling objectives.
 
 \section{Conclusion}
 \TITLE{} treats partitioned zkML proof generation as a distributed serving
-problem. It separates cluster-wide job placement from node-local stage
-admission, uses historical resource profiles to control memory safely, and
-reuses expensive setup artifacts across requests. Our evaluation shows that
-partitioning exposes heterogeneous proof jobs with strongly time-varying memory
-demand and that those jobs scale effectively across prover nodes.
-\textbf{[Insert final concurrent-serving headline result.]}
+problem. Partitioning provides independently schedulable units of work, but
+the runtime must still place heterogeneous jobs, protect local memory, and
+reuse expensive setup artifacts. \TITLE{} separates cluster-wide job placement
+from node-local admission and uses historical resource profiles to inform those
+decisions. Our evaluation shows that these profiles are highly repeatable,
+that setup reuse removes most repeated setup work, and that partitioned
+requests scale effectively across prover nodes. Across the three primary
+workloads, scaling from one to ten nodes improves completion time by
+10.5--12.7\times.
