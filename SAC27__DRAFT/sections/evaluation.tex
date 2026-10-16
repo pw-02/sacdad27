@@ -38,16 +38,18 @@ Cold runs generate setup artifacts during execution, while warm runs reuse match
 \subsection{Performance Under Concurrent Requests}
 \label{sec:eval-serving}
 
-\begin{figure*}[t]
+\begin{figure}[t]
 \centering
-\includegraphics[width=0.95\linewidth]{figures/sacdad/eval/burst_serving.pdf}
-\caption{MobileNetV2 burst serving with a 48~GiB proving budget. We compare whole-job peak reservation with \TITLE{}'s stage-aware admission. Lower is better.}
+\includegraphics[width=\columnwidth]{figures/sacdad/eval/burst_serving.pdf}
+\caption{MobileNetV2 burst serving under a 48~GiB proving budget. Bars compare whole-job peak reservation with \TITLE{}'s stage-aware admission for median request latency and batch makespan. Lower is better.}
 \label{fig:burst-performance}
-\end{figure*}
+\end{figure}
 
 Partitioning already makes many proof jobs small, so stage-aware admission does not necessarily improve performance when memory is plentiful. In that regime, whole-job peak reservation can still admit substantial parallelism because many jobs fit in memory at once. We therefore evaluate stage-aware admission under controlled memory pressure, where reserving every job's peak for its full execution is more likely to delay stages whose current memory demand is much smaller.
 
-Figure~\ref{fig:burst-performance} shows MobileNetV2 with the proving budget restricted to 48~GiB. Across bursts of 4, 8, and 16 requests, median request latency falls from 42{,}057.1~s to 38{,}340.0~s, from 84{,}134.9~s to 78{,}689.0~s, and from 168{,}174.4~s to 161{,}068.5~s. These correspond to improvements of 8.8\%, 6.5\%, and 4.2\%, respectively. Batch makespan improves by 3.2\% for burst 4 and 4.3\% for burst 16, while the two policies are effectively unchanged at burst 8.
+Figure~\ref{fig:burst-performance} shows MobileNetV2 with the proving budget restricted to 48~GiB. For bursts of 2, 4, 8, and 16 requests, median request latency falls from 21{,}100.7~s to 20{,}088.4~s, from 42{,}057.1~s to 38{,}340.0~s, from 84{,}134.9~s to 78{,}689.0~s, and from 168{,}174.4~s to 161{,}068.5~s. These correspond to improvements of 4.8\%, 8.8\%, 6.5\%, and 4.2\%, respectively.
+
+Batch makespan also improves for three of the four burst sizes. It falls from 21{,}130.8~s to 20{,}882.2~s at burst 2, from 42{,}078.3~s to 40{,}721.6~s at burst 4, and from 168{,}300.7~s to 161{,}074.9~s at burst 16, corresponding to improvements of 1.2\%, 3.2\%, and 4.3\%. At burst 8 the two policies are effectively unchanged, with makespans of 84{,}179.7~s and 84{,}246.2~s.
 
 These results show that stage-aware admission is most useful when memory capacity is the binding resource. When partitioned jobs already fit comfortably within the available budget, whole-job reservation leaves little additional concurrency for stage-aware admission to expose. Under tighter memory pressure, stage-level admission can overlap low-memory work that whole-job reservation would otherwise delay.
 
