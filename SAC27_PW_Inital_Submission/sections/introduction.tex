@@ -1,0 +1,35 @@
+\section{Introduction}
+\label{sec:intro}
+
+Cloud-hosted ML services make increasingly expensive models accessible through remote APIs~\cite{zhang2019mark}. Although this deployment model relieves clients of local inference, it places execution outside their direct control. A client may therefore receive a prediction without independent assurance that the specified model was evaluated correctly on the submitted input. Recomputing the prediction locally would negate much of the benefit of outsourcing, while auditing the provider may require access to proprietary model parameters or sensitive intermediate values. Verifiable inference instead seeks to establish correct execution without requiring the client to reproduce or inspect the underlying computation.
+
+Zero-knowledge machine learning (zkML)~\cite{chen2024zkml,kang2024scaling,liu2021zkcnn,boyuan2021zen,chen2025zktorch} offers one approach by allowing a model provider to accompany each prediction with a cryptographic proof of correct execution. Zero-knowledge succinct non-interactive arguments of knowledge (ZK-SNARKs)~\cite{bitansky2012extractable,kilian1992note,groth2016size} are especially attractive because proofs are compact and inexpensive to verify, while model parameters and intermediate activations can remain hidden.
+
+These verifier-side benefits come at substantial cost to the provider. Proof generation requires compiling the model computation into a proof-compatible constraint system and carrying out expensive cryptographic processing. Prior work reduces this cost through proof-friendly quantization~\cite{boyuan2021zen}, specialized circuit constructions~\cite{kang2024scaling}, efficient protocols for convolutions and attention~\cite{liu2021zkcnn,sin2024zkllm}, and sparsification~\cite{maheri2025telesparse}. Even with these advances, proving remains substantially more expensive than ordinary inference and can consume hundreds of gigabytes of memory, with some configurations reaching the terabyte scale~\cite{chen2024zkml,maheri2025telesparse}.
+
+Scalability is limited not only by proving cost, but also by its execution model. Many zkML systems prove an entire inference in a single end-to-end invocation~\cite{boyuan2021zen,kang2024scaling,liu2021zkcnn}, concentrating latency and memory demand on one machine even when additional prover capacity is available.
+
+\noindent\textbf{Our Work.}
+We study ZK-SNARK-based ML proof generation as a systems problem. Rather than treating an inference as one monolithic prover invocation, we divide it into smaller proving jobs that can execute across multiple machines while still establishing the correctness of the original inference.
+
+This change in execution granularity introduces a trade-off. Smaller jobs reduce per-invocation computation and memory and expose parallelism, but increase coordination overhead and may differ substantially in runtime and memory demand. We study this trade-off by varying the number of jobs and partition boundaries in the model graph. Across convolutional and transformer workloads, fine-grained partitioning achieves the lowest aggregate prover time and peak per-job memory among the configurations evaluated, while exposing substantial job heterogeneity.
+
+To exploit this structure, we introduce \TITLE{}, a distributed proof-serving system for zkML inference. For each request, \TITLE{} partitions the model into proving jobs and materializes tensors that cross partition boundaries before proving begins, allowing jobs to execute independently across prover machines. Cryptographic commitments bind values exchanged between adjacent partitions so that the resulting proofs establish one consistent execution of the full model.
+
+\TITLE{} schedules jobs using historical runtime and memory profiles. Expensive jobs are started early, while memory-aware admission prevents aggregate demand on a machine from exceeding its capacity. The system also reuses compiled circuits and proving keys across repeated requests.
+
+We implement \TITLE{} using EZKL~\cite{ezkl} as the primary proving backend. EZKL compiles ML models into circuits and generates proofs using Halo2~\cite{halo2}; \TITLE{} leaves this pipeline unchanged and adds partitioning, scheduling, artifact reuse, and distributed execution around it.
+
+We evaluate \TITLE{} on AWS across convolutional, generative, and transformer workloads. On one worker, partitioned execution reduces end-to-end latency by up to \(5.6\times\) relative to monolithic EZKL. Across ten prover nodes, \TITLE{} achieves up to \(12.7\times\) additional speedup and up to \(69\times\) lower latency than full-model proving, while reducing peak per-machine memory by up to \(48\times\). It also enables proof generation for a model that exceeds the memory available to the monolithic baseline. Integration with zkTorch~\cite{chen2025zktorch} shows that the execution layer supports multiple zkML backends.
+
+\noindent\textbf{Contributions.}
+This paper makes the following contributions:
+\begin{itemize}[leftmargin=*,topsep=2pt,itemsep=2pt,parsep=0pt,partopsep=0pt]
+    \item We characterize partitioning as an execution strategy for zkML proof generation, showing how proving granularity affects aggregate prover time, peak per-job memory, and job heterogeneity across convolutional and transformer workloads.
+
+    \item We design and implement \TITLE{}, a distributed proof-serving system that converts an inference into independently executable proving jobs while preserving consistency across the resulting proofs.
+
+    \item We develop resource-aware scheduling and admission, reusable proving artifacts, and job-level recovery for heterogeneous proof workloads.
+
+    \item We evaluate \TITLE{} in single-machine and distributed deployments, demonstrating substantial reductions in latency and peak memory, scale-out across prover nodes, and support for multiple zkML backends.
+\end{itemize}

@@ -1,0 +1,14 @@
+\section{Related Work}
+\label{sec:related-work}
+
+\noindent\textbf{zkML systems and model-level optimizations.}
+Prior zkML systems reduce prover cost through improved proof protocols, circuit encodings, compiler support, and proof-friendly model representations~\cite{ghodsi2017safetynets,liu2021zkcnn,boyuan2021zen,lee2024vcnn,weng2021mystique,chen2024zkml,chen2025zktorch,xie2025zkpytorch,sin2024zkllm,ezkl,halo2book}. Other work exploits model structure, including sparsity, to further reduce proving overhead~\cite{maheri2025telesparse,li2024sparsity}. These approaches primarily optimize how individual ML computations are represented and proved. \TITLE{} is complementary: it focuses on how the resulting proving work is partitioned, scheduled, and executed across distributed resources.
+
+\noindent\textbf{Partitioning and distributed proof generation.}
+DIZK~\cite{wu2018dizk} distributes proof generation across a cluster, while Pianist~\cite{liu2024pianist} and push0~\cite{ahmadvand2026push0} coordinate distributed provers for blockchain-oriented workloads. DSperse~\cite{ivanov2025dsperse} partitions ML inference into selectively verifiable slices. \TITLE{} instead targets end-to-end zkML proof serving, where a request expands into heterogeneous proving jobs derived from the model graph and scheduled under request-level latency and memory constraints.
+
+\noindent\textbf{Secure ML inference.}
+CryptoNets~\cite{gilad2016cryptonets}, SecureML~\cite{mohassel2017secureml}, Gazelle~\cite{juvekar2018gazelle}, Delphi~\cite{mishra2020delphi}, and CrypTFlow~\cite{kumar2020cryptflow} use homomorphic encryption, garbled circuits, or secure multi-party computation for privacy-preserving inference. \TITLE{} targets a different guarantee: succinct proofs of correct execution that can be verified without re-executing the model.
+
+\noindent\textbf{ML serving systems.}
+Clipper~\cite{crankshaw2017clipper}, Clockwork~\cite{gujarati2020serving}, INFaaS~\cite{romero2021infaas}, and Ray Serve~\cite{rayserve} schedule inference workloads across shared resources to improve latency, throughput, and utilization. \TITLE{} addresses a different workload in which each request expands into long-running, memory-intensive proving jobs with reusable backend-specific artifacts, requiring request-aware scheduling, memory admission, and artifact reuse.

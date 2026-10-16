@@ -1,0 +1,30 @@
+
+\section{Implementation and Deployment}
+We implemented \TITLE{} in approximately 12{,}000 lines of Python. The prototype includes the orchestrator, scheduling and admission policies, worker managers, prover workers, shared-artifact interface, and client API. Prover workers invoke EZKL~\cite{ezkl} for submodel compilation, witness generation, proving-key setup, and Halo2-based proof construction.
+
+\TITLE{} supports multiple zkML backends through the same orchestration interface. Section~\ref{subsec:extendingtoothersystems} demonstrates this with zkTorch~\cite{chen2025zktorch}. Shared storage uses the local filesystem for colocated deployments and Amazon S3~\cite{aws-s3} for distributed deployments. Worker failures are handled at job granularity. Completed results remain in shared storage and interrupted jobs are retried.
+
+% \noindent\textbf{Source code.} We intend to open-source \TITLE{} after the review period.
+
+
+% \noindent\textbf{Halo2 acceleration.}
+% In addition to the \TITLE{} runtime system, our implementation extends the Halo2 proof system used by EZKL. Halo2 proof construction relies heavily on multi-scalar multiplication (MSM) and number-theoretic transform (NTT) operations, both of which are expensive and highly parallel. We therefore extend Halo2 with GPU-backed implementations of the MSM and NTT kernels used during proof construction. This acceleration is local to each prover worker. \TITLE{} continues to treat each proving job as a backend invocation whose runtime and memory usage are measured, while the worker can execute the dominant cryptographic kernels on a GPU when one is available. These kernel-level improvements are not specific to \TITLE{} and can benefit other Halo2-based applications, since Halo2 serves as a backend for multiple zkML and zero-knowledge systems. Section~\ref{subsec:gpuhalo2} evaluates the effect of this acceleration on proving latency.
+
+
+% \noindent\textbf{Source code.}
+% We intend to open-source the code for \TITLE{} and our modified Halo2 implementation after the review period.
+
+
+% The system is structured as a distributed service composed of a central coordinator and a set of prover workers. The core service runs a gRPC-based control plane responsible for model partitioning, profiling, and scheduling proving jobs across workers. Each prover worker in \TITLE{} runs as a long-lived process that repeatedly fetches and executes proving jobs assigned by the coordinator. Workers communicate with the coordinator over a gRPC interface and operate independently, allowing the system to scale horizontally across machines. Upon startup, a worker establishes a gRPC connection to the coordinator and advertises its availability. The worker then enters a polling loop in which it requests new proving jobs. Each job specifies a submodel, input data, caching configuration, and storage backend.
+
+
+
+
+% We implement \TITLE{} as a modular, distributed system using a combination of Rust and Python. The dispatcher and prover workers are implemented as gRPC services, communicating via Protocol Buffers to exchange subgraph tasks, input data, and proof results. All components are containerized and can be deployed locally or across a distributed cluster. The system supports both online and offline operation modes, as described in Section~\ref{sec:design}, and exposes a REST gateway for external clients in addition to its native gRPC API.
+
+% For proof generation, \TITLE{} uses the Halo2 proving system, with circuits compiled through the EZKL framework. This backend supports a wide range of neural network operations and provides a flexible frontend for constructing arithmetic circuits from model graphs. To improve performance, we integrate GPU-accelerated cryptographic backends for two multi-scalar multiplication (MSM) and number-theoretic transforms (NTT). We adapt standalone CUDA implementations and embed them directly into the Halo2 pipeline, requiring custom memory orchestration and witness layout translation to ensure compatibility with the circuit execution model.
+
+% Model partitioning, profiling, and subgraph merging are performed using Python-based tooling that interfaces with the model graph and extracts provable subcircuits. \TITLE{} supports models defined in both PyTorch and TensorFlow; these are converted into ONNX format during preprocessing to enable graph-level analysis and standardized circuit compilation. Each subgraph is compiled independently and passed to a worker along with its input tensor. The resulting proof is streamed back to the dispatcher for aggregation or client return. Proof objects are serialized using a compact binary format and can optionally be persisted for audit or replay.
+
+% The implementation is designed for extensibility, allowing additional proving backends or hardware accelerators to be integrated in future work. 
+
