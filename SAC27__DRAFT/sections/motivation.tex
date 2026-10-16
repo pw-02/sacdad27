@@ -3,39 +3,24 @@
 \section{Characterizing zkML Serving Workloads}
 \label{sec:characterization}
 
-We characterize the properties of partitioned zkML workloads that shape
-scheduling in a shared prover. We focus on three questions: how partitioning
-changes proving cost, how runtime and memory vary across proof jobs, and how
-memory demand evolves within a job.
+We characterize the properties of partitioned zkML workloads that shape scheduling in a shared prover. We focus on three questions. How does partitioning change proving cost and per-job resource demand? How heterogeneous are the resulting proof jobs? And how does memory demand evolve during the lifetime of an individual job? These measurements motivate the separation between cluster-wide placement and node-local admission in Section~\ref{sec:design}.
 
 \subsection{Workloads and Measurement Method}
 \label{sec:characterization-method}
 
-We use TinyBERT, MobileNetV2, and NanoGPT (4L), spanning convolutional,
-encoder, and autoregressive models. At the finest granularity they produce
-120, 100, and 181 proof jobs, respectively. We compare monolithic proving
-with partitioned proving in which all jobs execute sequentially on the same
-prover, isolating the effect of proving granularity from inter-job parallelism.
-Both use EZKL~\cite{ezkl} on a dual-socket AMD EPYC 9354 server with
-755~GiB of RAM. We record per-job execution time, process memory, and major
-proof-stage transitions. Unless otherwise stated, runs begin cold so that the
-full setup and proving lifecycle is represented.
+We use TinyBERT, MobileNetV2, and NanoGPT (4L), spanning convolutional, encoder, and autoregressive models. At the finest granularity they produce 120, 100, and 181 proof jobs, respectively. We compare monolithic proving with partitioned proving in which all jobs execute sequentially on the same prover. Keeping both configurations serial isolates the effect of proving granularity from any benefit due to inter-job parallelism.
+
+Both configurations use EZKL~\cite{ezkl} on a dual-socket AMD EPYC 9354 server with 755~GiB of RAM. For each proof job, we record execution time, process memory, and transitions between major proof-construction stages. Unless otherwise stated, runs begin cold so that setup and proving are both represented. We additionally evaluate a larger NanoGPT (10L) model to test whether partitioning changes which workloads are feasible on the same hardware.
 
 \subsection{Impact of Partitioning on Proving Cost}
 \label{sec:decomposition-benefit}
 
-Figure~\ref{fig:partition-benefits} shows that partitioning reduces proving
-time even when jobs execute serially. Relative to monolithic proving,
-completion time falls by 40.6\% for TinyBERT, 16.3\% for MobileNetV2, and
-60.5\% for NanoGPT (4L). Peak memory falls by 80.5\%, 91.5\%, and 98.0\%,
-respectively. Partitioning also makes larger models feasible: monolithic
-NanoGPT (10L) exhausts available memory, whereas partitioned execution
-completes with a 12.0~GiB peak.
+Figure~\ref{fig:partition-benefits} shows that partitioning reduces proving time even when jobs execute serially. Relative to monolithic proving, completion time falls by 40.6\% for TinyBERT, 16.3\% for MobileNetV2, and 60.5\% for NanoGPT (4L). Thus, the benefit is not solely a consequence of parallel execution. Smaller circuits can themselves be cheaper to prove despite the additional partition boundaries and repeated prover invocations.
+
+Partitioning also substantially lowers peak memory. The maximum observed footprint falls by 80.5\%, 91.5\%, and 98.0\% for TinyBERT, MobileNetV2, and NanoGPT, respectively, because sequential partitioned execution need only accommodate the largest individual job rather than the full-model circuit. This change can determine feasibility. Monolithic proving of NanoGPT (10L) exhausts available memory, whereas partitioned execution completes with a 12.0~GiB peak.
 
 \textbf{Implication.}
-Partitioning changes the workload presented to the runtime by reducing the
-cost and memory footprint of individual proof jobs while exposing additional
-parallelism.
+Partitioning changes the workload presented to the runtime in two ways. It exposes independently schedulable work, and it reduces the cost and memory footprint of the units being scheduled. The resulting jobs are not uniform, however, which limits the usefulness of policies based only on job counts.
 
 \begin{figure}[t]
     \centering
@@ -57,20 +42,14 @@ parallelism.
 \subsection{Heterogeneity Across Proof Jobs}
 \label{sec:job-heterogeneity}
 
-Figure~\ref{fig:job-heterogeneity} shows substantial heterogeneity within
-each request. TinyBERT's longest job takes 1,461.3~s compared with a 4.47~s
-median, a \(327\times\) difference, and accounts for 40.9\% of aggregate
-job time. MobileNetV2 and NanoGPT show smaller but still substantial spreads
-of approximately \(21\times\) and \(31\times\).
+Figure~\ref{fig:job-heterogeneity} shows substantial heterogeneity within each request. TinyBERT is the most extreme case. Its longest job takes 1,461.3~s compared with a 4.47~s median, a \(327\times\) difference, and that single job accounts for 40.9\% of aggregate job time. MobileNetV2 and NanoGPT show smaller but still substantial spreads of approximately \(21\times\) and \(31\times\) between their longest job and median.
 
-Memory is similarly uneven. Median per-job peaks are 0.21, 3.38, and
-0.22~GiB for TinyBERT, MobileNetV2, and NanoGPT, while the largest reach
-51.61, 41.45, and 5.70~GiB. A fixed concurrency limit therefore says little
-about either remaining request work or instantaneous memory pressure.
+This skew matters for request scheduling. The number of unfinished jobs is a poor proxy for remaining work: a request with only a few jobs left may still contain one of its dominant proofs, while a request with many jobs remaining may consist mostly of short work. Exposing many partitions therefore does not by itself guarantee a short request completion time.
+
+Memory is similarly uneven. Median per-job peaks are 0.21, 3.38, and 0.22~GiB for TinyBERT, MobileNetV2, and NanoGPT, while the largest reach 51.61, 41.45, and 5.70~GiB. Consequently, the same number of active jobs can correspond to very different memory pressure. A fixed worker count cannot distinguish several small jobs from a combination that approaches the node's memory limit.
 
 \textbf{Implication.}
-Runtime estimates help identify jobs that may dominate request completion,
-while memory estimates determine which jobs can safely share a prover node.
+Runtime and memory constrain scheduling in different ways. Runtime estimates help identify jobs that may dominate request completion, while memory estimates determine which work can safely share a prover node. The runtime therefore needs resource-aware admission rather than a fixed concurrency limit alone.
 
 \begin{figure*}[t]
     \centering
@@ -102,19 +81,12 @@ NanoGPT (4L)  & 13.3 & $2.22\times$ \\
 \subsection{Resource Demand Across Execution Stages}
 \label{sec:stage-resource-demand}
 
-Peak memory does not reveal how demand evolves during execution. We therefore
-align process-memory samples with preparation, key generation, and proving.
-Figure~\ref{fig:stage-memory} shows that the highest-memory jobs spend only
-4.8\%, 3.5\%, and 13.3\% of execution at or above 90\% of peak memory for
-TinyBERT, MobileNetV2, and NanoGPT, respectively. Their peaks are
-\(4.07\times\), \(2.53\times\), and \(2.22\times\) their time-averaged
-memory consumption (Table~\ref{tab:temporal-memory}).
+Peak memory determines whether a job can fit on a node, but it does not reveal how much of the execution actually requires that peak. We therefore align process-memory samples with preparation, key generation, and proving. Figure~\ref{fig:stage-memory} shows a common pattern across all three workloads: memory remains comparatively low during early work and rises sharply during the cryptographic stages. TinyBERT grows from below 6.38~GiB during preparation to 51.61~GiB, while MobileNetV2 grows from below 0.92~GiB to 41.45~GiB. NanoGPT exhibits the same pattern at smaller scale, reaching 5.70~GiB.
+
+The high-memory portion is also short-lived. The representative TinyBERT, MobileNetV2, and NanoGPT jobs spend only 4.8\%, 3.5\%, and 13.3\% of execution at or above 90\% of their peak. Their peaks are \(4.07\times\), \(2.53\times\), and \(2.22\times\) their time-averaged memory consumption (Table~\ref{tab:temporal-memory}). Reserving each job's maximum for its entire lifetime would therefore protect capacity that the process does not need for most of its execution.
 
 \textbf{Implication.}
-Whole-job peak reservation is conservative for much of execution. A runtime
-can expose additional concurrency by admitting stages according to their
-current memory demand rather than reserving every job's eventual peak for its
-entire lifetime.
+Whole-job peak reservation is a conservative basis for local admission. A runtime can expose additional concurrency by allowing low-memory stages to overlap and delaying only the stages whose predicted demand would exceed available capacity. This observation motivates the stage-aware controller in Section~\ref{sec:local-admission}; Section~\ref{sec:profile-accuracy} evaluates whether recent executions predict those stage demands accurately enough for online use.
 
 \begin{figure*}[t]
     \centering
